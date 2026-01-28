@@ -34,6 +34,8 @@ PROMPTS="$SCRIPT_DIR/prompts"
 PROJECT_ID=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 OUTPUT_DIR="/tmp/claude/kern/$PROJECT_ID/$BRANCH"
+# Unified task list ID for Claude Code's native task persistence
+export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
 # State derived from SPEC.md + stage files (no state file needed)
 LOCKDIR="/tmp/claude/kern/$PROJECT_ID-${BRANCH//\//-}.lock.d"
 PIDFILE="$LOCKDIR/pid"
@@ -134,9 +136,43 @@ check_stale_lock() {
   rm -rf "$LOCKDIR"
 }
 
-# Extract current task + research notes from SPEC.md
+# Extract current task + research notes from SPEC.md (fallback)
 extract_task() {
   awk '/^- \[~\]/{p=1; print; next} p && /^  /{print; next} p{exit}' "$SPEC" | head -50
+}
+
+# Check if task generation is needed (no pending tasks in Claude's queue)
+needs_generation() {
+  local task_dir="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID"
+  # If task directory doesn't exist, we need generation
+  [[ ! -d "$task_dir" ]] && return 0
+  # Check for pending tasks in the queue
+  local pending=0
+  local task_file
+  for task_file in "$task_dir"/*.json; do
+    [[ -f "$task_file" ]] || continue
+    local status
+    status=$(jq -r '.status // "unknown"' "$task_file" 2>/dev/null)
+    [[ "$status" == "pending" ]] && ((pending++))
+  done
+  [[ "$pending" -eq 0 ]]
+}
+
+# Get current in-progress task from Claude's task list (for context injection)
+get_current_task() {
+  local task_dir="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID"
+  [[ -d "$task_dir" ]] || return 1
+  local task_file
+  for task_file in "$task_dir"/*.json; do
+    [[ -f "$task_file" ]] || continue
+    local status
+    status=$(jq -r '.status // "unknown"' "$task_file" 2>/dev/null)
+    if [[ "$status" == "in_progress" ]]; then
+      jq -r '"- [~] \(.subject)\n  > **Description:** \(.description // "N/A")"' "$task_file" 2>/dev/null
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Validate SPEC.md format after stage completion
@@ -196,6 +232,7 @@ run_claude() {
   for attempt in $(seq 1 $max_retries); do
     debug "Attempt $attempt/$max_retries for $stage_name (model=$model)"
 
+    local agents_file="$SCRIPT_DIR/agents.json"
     local cmd_args=(
       claude
       --dangerously-skip-permissions
@@ -203,6 +240,7 @@ run_claude() {
       --output-format json
       --model "$model"
     )
+    [[ -f "$agents_file" ]] && cmd_args+=(--agents "$(cat "$agents_file")")
 
     if $DRY_RUN; then
       log "[DRY-RUN] Would run: ${cmd_args[*]:0:5}... > $output_file"
@@ -211,7 +249,7 @@ run_claude() {
     fi
 
     local exit_code=0
-    CLAUDE_CODE_TASK_LIST_ID="kern-$stage_name" \
+    CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH" \
       "${cmd_args[@]}" > "$output_file" 2>&1 || exit_code=$?
 
     # Check if output is valid JSON
@@ -316,7 +354,7 @@ if [[ ! -f "$SPEC" ]]; then
   exit 1
 fi
 
-for prompt in 1_research 2_implement 3_commit; do
+for prompt in 0_generate 1_research 2_implement 3_commit; do
   if [[ ! -f "$PROMPTS/${prompt}.md" ]]; then
     log "ERROR: Missing prompt template: $PROMPTS/${prompt}.md"
     exit 1
@@ -337,10 +375,29 @@ fi
 for i in $(seq 1 $MAX_ITER); do
   log "=== Iteration $i/$MAX_ITER ==="
 
-  # Exit early if no tasks remain
+  # Exit early if no tasks remain in SPEC.md
   if ! grep -qE '^\- \[[ ~]\]' "$SPEC" 2>/dev/null; then
     log "All tasks complete"
     exit 0
+  fi
+
+  # === Stage 0: Generate Task Queue ===
+  if needs_generation; then
+    log "Stage 0: Generate Task Queue"
+
+    if ! run_stage "generate" "$PROMPTS/0_generate.md" "$OUTPUT_DIR/stage0.json"; then
+      log "Stage 0 failed"
+      exit 1
+    fi
+    show_result "$OUTPUT_DIR/stage0.json"
+
+    # Check if tasks were generated
+    if jq -r '.result // ""' "$OUTPUT_DIR/stage0.json" | grep -q "NO_TASKS"; then
+      log "No tasks to generate"
+      exit 0
+    fi
+  else
+    debug "Stage 0: Skipped (tasks exist in queue)"
   fi
 
   # === Stage 1: Research ===

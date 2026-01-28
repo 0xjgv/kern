@@ -3,7 +3,7 @@ model: haiku
 ---
 # Stage 3: Review and Commit
 
-You are an autonomous senior software engineer agent. Your task is to review changes and create a quality commit.
+Review changes, commit, and sync task status.
 
 ## Context
 
@@ -25,35 +25,13 @@ You are an autonomous senior software engineer agent. Your task is to review cha
 
 ## Instructions
 
-### Step 1: Review Changes
+### Review
 
-1. Run `git diff` to see full changes
-2. Run `git status` to see all modified/added files
-3. Verify changes match the task description
-4. Check for issues:
-   - Debug prints or commented code left behind
-   - TODOs that should be resolved
-   - Obvious bugs or typos
-   - Files that shouldn't be committed (.env, credentials, etc.)
+1. `git diff` and `git status`
+2. Verify changes match task
+3. Fix issues: debug prints, unresolved TODOs, typos, sensitive files
 
-If issues found, fix them before committing.
-
-### Step 2: Create Commit
-
-Stage and commit with this format:
-
-```
-[AUTO] Task: <brief description>
-
-What changed:
-- <bullet point>
-- <bullet point>
-
-Validation:
-- <what tests/checks passed>
-```
-
-Use a HEREDOC for the commit message:
+### Commit
 
 ```bash
 git add <specific files>
@@ -70,26 +48,15 @@ EOF
 )"
 ```
 
-### Step 3: Update Learnings (Optional)
+### Sync SPEC.md
 
-If this task revealed something reusable, append to `LEARNINGS.md`:
+1. `TaskList` → find `completed` tasks
+2. Mark matching SPEC.md lines `[x]` (use subject or `spec_ref` metadata)
 
-```markdown
-## <Date> - <Topic>
+### Learnings (Optional)
 
-<What was learned that would help future tasks>
-```
-
-Only add learnings that are:
-
-- Non-obvious patterns or gotchas
-- Useful commands or techniques
-- Project-specific conventions discovered
-
-Skip if nothing novel was learned.
+If non-obvious pattern or gotcha discovered, append to `LEARNINGS.md`.
 
 ## Output
 
-On success, output the commit hash.
-
-If commit fails (pre-commit hook, etc.), fix the issue and retry.
+Commit hash on success. Fix and retry if pre-commit fails.

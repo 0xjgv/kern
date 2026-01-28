@@ -3,7 +3,7 @@ model: opus
 ---
 # Stage 1: Select and Research
 
-You are an autonomous senior software engineer agent. Your task is to select the next task and research the codebase to prepare for implementation.
+Select next task from queue and research the codebase.
 
 ## Context
 
@@ -17,53 +17,41 @@ You are an autonomous senior software engineer agent. Your task is to select the
 
 ## Instructions
 
-### Step 1: Pre-flight
+### Pre-flight
 
-1. Run `git status` - if dirty tree, warn and continue (don't stash/commit)
-2. Run `git diff HEAD~1 --stat` for recent context
+1. `git status` - warn if dirty, continue
+2. `git diff HEAD~1 --stat` for context
 
-### Step 2: Select Task
+### Select Task
 
-Read `SPEC.md` and find:
+1. `TaskList` to see queue
+2. Find first `pending` task with empty `blockedBy`
+3. `TaskGet` for full details
+4. `TaskUpdate` to mark `in_progress`
 
-1. `- [~]` in-progress task → Continue that task
-2. Else first `- [ ]` unchecked task → Mark as `- [~]`
+If no available task: output `NO_TASK` and stop.
 
-If no suitable task exists (all complete or blocked), output "NO_TASK" and stop.
+### Research
 
-### Step 3: Research
+If task lacks research metadata, explore codebase:
 
-If the task has no research notes (no `> **Research:**` block), explore the codebase:
+- `codebase-locator`: Find relevant files (paths + lines)
+- `codebase-pattern-finder`: Identify patterns to follow
+- `codebase-analyzer`: Understand current vs desired state
+- `web-search-researcher`: External APIs if needed
 
-1. Use `codebase-locator` to find relevant files (paths + line numbers)
-2. Use `codebase-pattern-finder` to identify patterns to follow
-3. Use `codebase-analyzer` to understand current vs desired state
-4. Use `web-search-researcher` for external APIs if needed
+Focus on: files to modify, patterns to follow (check Learnings!), constraints/gotchas.
 
-Focus on:
+### Update Task
 
-- Which files need modification
-- Existing patterns to follow (check Learnings above first!)
-- Constraints and gotchas that could affect implementation
-- External documentation if needed
+`TaskUpdate` with metadata: files, pattern, constraints, external docs.
 
-### Step 4: Update SPEC.md
+### Sync SPEC.md
 
-Add research notes under the task:
-
-```markdown
-- [~] Task description
-  > **Research:**
-  >   - Files: <path:lines>, <path:lines>
-  >   - Pattern: <what pattern to follow, reference file>
-  >   - Constraint: <blockers or warnings>
-  >   - External: <API docs URL if needed>
-```
-
-Keep notes concise but complete enough for a fresh context to implement.
+Mark task `[~]` with research notes for human visibility.
 
 ## Output
 
-On completion, the task in `SPEC.md` should be marked `[~]` with research notes.
+Task marked `in_progress` with research metadata. SPEC.md synced.
 
-If no task available, output exactly: `NO_TASK`
+If no task: `NO_TASK`
