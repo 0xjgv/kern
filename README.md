@@ -82,23 +82,31 @@ jq '.result' /tmp/claude/kern/$PROJECT/$BRANCH/stage*.json
 ## Features
 
 ### Retry Logic
+
 Transient failures (API errors, network issues) retry up to 3 times with exponential backoff.
 
 ### Stale Lock Detection
+
 If a previous run was killed, the lock file is automatically cleaned up based on PID.
 
 ### SPEC.md Validation
+
 After each stage, SPEC.md is validated for:
+
 - Malformed task markers
 - Multiple in-progress tasks (should only be one)
 
 ### Resume Logic
+
 Pipeline state is inferred from SPEC.md + stage files (no state file needed):
+
 - If an in-progress task exists (`[~]`) and stage files are present, resumes from the appropriate stage
 - Stage files are cleaned up after each successful iteration
 
 ### Project/Branch Isolation
+
 Output directory is scoped by project and branch: `/tmp/claude/kern/$PROJECT_ID/$BRANCH`
+
 - Prevents collisions between repos and git worktrees
 - Lock files are also scoped: `/tmp/claude/kern/$PROJECT_ID-$BRANCH.lock.d`
 
@@ -141,13 +149,16 @@ Tool restrictions are enforced via stage prompts (not script-level enforcement):
 ## Failure Handling
 
 **Tier 1 - Different approach** (attempts 1-2):
+
 - Stage 2 reads attempt notes and tries alternative
 
 **Tier 2 - Decompose** (after 3 attempts):
+
 - Stage 2 breaks task into subtasks
 - Next iteration works on subtasks individually
 
 **Tier 3 - Skip** (if subtasks fail):
+
 - Task reverts to `[ ]` with notes preserved
 - Pipeline moves to next task
 - Will return to skipped task in future iteration
@@ -155,6 +166,7 @@ Tool restrictions are enforced via stage prompts (not script-level enforcement):
 ## Output Codes
 
 Stage 2 outputs one of:
+
 - `SUCCESS` - Task completed, ready for Stage 3
 - `DECOMPOSED` - Task broken into subtasks, skip to next iteration
 - `SKIPPED` - Task blocked, moved to next task
@@ -163,16 +175,19 @@ Stage 2 outputs one of:
 ## Debugging
 
 1. Check stage outputs:
+
    ```bash
    jq '.result' /tmp/claude/kern/$PROJECT/$BRANCH/stage*.json
    ```
 
 2. View full transcript:
+
    ```bash
    jq '.' /tmp/claude/kern/$PROJECT/$BRANCH/stage2.json | less
    ```
 
 3. Check SPEC.md for attempt notes:
+
    ```bash
    grep -A 10 '\[~\]' SPEC.md
    ```
@@ -189,19 +204,18 @@ Stage 2 outputs one of:
 
 To cut a new release:
 
-```bash
-# Tag and push (triggers GitHub Actions)
-git tag v1.0.0
-git push origin v1.0.0
-```
+1. Push commits to main
+2. Go to **Actions → Release → Run workflow**
+3. Enter version (e.g., `0.1.4`) and run
 
-The release workflow:
-1. Injects version from git tag into `kern.sh`
-2. Creates tarball with `kern.sh`, `prompts/`, `README.md`
-3. Publishes to GitHub Releases with auto-generated notes
-4. Users receive updates via `kern --update`
+The workflow:
 
-No need to manually update `VERSION` in `kern.sh` — it's derived from the tag.
+1. Validates version format and checks tag doesn't exist
+2. Injects version into `kern.sh`
+3. Creates tarball with `kern.sh`, `prompts/`, `README.md`
+4. Creates git tag and GitHub Release with auto-generated notes
+
+No local tags needed — the workflow handles everything.
 
 ## CI/CD
 
@@ -244,6 +258,6 @@ jobs:
 ```
 
 **Notes:**
-- Requires `ANTHROPIC_API_KEY` secret
+
 - Uses `workflow_dispatch` for manual triggers — adjust trigger as needed
-- Claude CLI requires Node.js 18+
+- Requires Claude Code CLI
