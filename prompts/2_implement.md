@@ -52,8 +52,7 @@ Run `make check` or task-specific validation.
 **SUCCESS:**
 
 1. `TaskUpdate` → mark `completed`
-2. Mark `[x]` in SPEC.md
-3. Leave uncommitted (Stage 3 commits)
+2. Leave uncommitted (Stage 3 commits)
 
 **FAILURE:**
 

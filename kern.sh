@@ -149,11 +149,6 @@ find_task_by_status() {
   return 1
 }
 
-# Check if task queue has work (pending or in-progress)
-has_queued_work() {
-  find_task_by_status "pending" >/dev/null || find_task_by_status "in_progress" >/dev/null
-}
-
 # Get ID of current in-progress task
 get_current_task_id() {
   local task_file
