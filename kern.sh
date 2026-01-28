@@ -34,6 +34,8 @@ PROMPTS="$SCRIPT_DIR/prompts"
 PROJECT_ID=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 OUTPUT_DIR="/tmp/claude/kern/$PROJECT_ID/$BRANCH"
+# Unified task list ID for Claude Code's native task persistence
+export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-${BRANCH//\//-}"
 # State derived from SPEC.md + stage files (no state file needed)
 LOCKDIR="/tmp/claude/kern/$PROJECT_ID-${BRANCH//\//-}.lock.d"
 PIDFILE="$LOCKDIR/pid"
@@ -113,15 +115,8 @@ trap cleanup EXIT
 log() { echo "[$(date '+%H:%M:%S')] $1" >&2; }
 debug() { ! $VERBOSE || echo "[$(date '+%H:%M:%S')] [DEBUG] $1" >&2; }
 show_result() { jq -r '.result // ""' "$1" 2>/dev/null; }
-
-# Parse frontmatter value from prompt file
-parse_frontmatter() {
-  local file="$1" key="$2"
-  awk -v key="$key" '
-    /^---$/ { if (++c == 2) exit }
-    c == 1 && $1 == key":" { gsub(/^[^:]+: */, ""); print; exit }
-  ' "$file"
-}
+stage_file() { echo "$OUTPUT_DIR/stage${1}.json"; }
+check_stage_result() { local f=$(stage_file "$1"); [[ -f "$f" ]] && jq -er '.result // empty' "$f" 2>/dev/null; }
 
 # Check if lock is stale (process no longer running)
 check_stale_lock() {
@@ -134,54 +129,62 @@ check_stale_lock() {
   rm -rf "$LOCKDIR"
 }
 
-# Extract current task + research notes from SPEC.md
+# Extract current task from queue (for context injection into prompts)
 extract_task() {
-  awk '/^- \[~\]/{p=1; print; next} p && /^  /{print; next} p{exit}' "$SPEC" | head -50
+  local task_file
+  task_file=$(find_task_by_status "in_progress") || return 0
+  jq -r '"Task ID: \(.id)\n- [~] \(.subject)\n  > \(.description // "")"' "$task_file" 2>/dev/null
 }
 
-# Validate SPEC.md format after stage completion
-validate_spec() {
-  local stage="$1"
-  if grep -qE '^\- \[\[' "$SPEC" 2>/dev/null; then
-    log "WARNING: Malformed task marker in SPEC.md after Stage $stage"
-    return 1
-  fi
-  local count
-  count=$(grep -c '^\- \[~\]' "$SPEC" 2>/dev/null) || count=0
-  [[ "$count" -le 1 ]] || { log "WARNING: Multiple in-progress tasks ($count) after Stage $stage"; return 1; }
+# Find first task file matching a status; prints path if found
+find_task_by_status() {
+  local target_status="$1"
+  local task_dir="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID"
+  [[ -d "$task_dir" ]] || return 1
+  local task_file
+  for task_file in "$task_dir"/*.json; do
+    [[ -f "$task_file" ]] || continue
+    [[ "$(jq -r '.status // ""' "$task_file" 2>/dev/null)" == "$target_status" ]] && { echo "$task_file"; return 0; }
+  done
+  return 1
 }
 
-# Build prompt using temp files for safe variable injection (strips frontmatter)
+# Get ID of current in-progress task
+get_current_task_id() {
+  local task_file
+  task_file=$(find_task_by_status "in_progress") || return 1
+  jq -r '.id' "$task_file" 2>/dev/null
+}
+
+# Get status of a specific task by ID
+get_task_status() {
+  local task_id="$1"
+  local task_file="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID/$task_id.json"
+  [[ -f "$task_file" ]] && jq -r '.status // ""' "$task_file" 2>/dev/null
+}
+
+
+# Build prompt with context substitution (strips frontmatter)
 build_prompt() {
   local template="$1"
-  local prev_result_file="${2:-}"  # Optional: previous stage JSON
-  local tmpdir=$(mktemp -d)
-  trap "rm -rf '$tmpdir'" RETURN
+  local prev_result_file="${2:-}"
 
-  # Gather context data into temp files
-  git log -5 --format="[%h] %s" --stat 2>&1 | head -80 > "$tmpdir/commits" || echo "No commits yet" > "$tmpdir/commits"
-  cat "$LEARNINGS" 2>/dev/null > "$tmpdir/learnings" || echo "No learnings yet." > "$tmpdir/learnings"
-  extract_task > "$tmpdir/task"
-  git diff --stat 2>&1 | head -50 > "$tmpdir/diff" || echo "No changes" > "$tmpdir/diff"
+  # Gather context directly into variables
+  local commits learnings task diff prev_result task_id
+  commits=$(git log -5 --format="[%h] %s" --stat 2>&1 | head -80) || commits="No commits yet"
+  learnings=$(cat "$LEARNINGS" 2>/dev/null) || learnings="No learnings yet."
+  task=$(extract_task)
+  diff=$(git diff --stat 2>&1 | head -50) || diff="No changes"
+  [[ -n "$prev_result_file" && -f "$prev_result_file" ]] && prev_result=$(show_result "$prev_result_file") || prev_result=""
+  task_id="${CURRENT_TASK_ID:-}"
 
-  # Add previous result if provided
-  if [[ -n "$prev_result_file" ]] && [[ -f "$prev_result_file" ]]; then
-    jq -r '.result // ""' "$prev_result_file" > "$tmpdir/prev_result"
-  else
-    echo "" > "$tmpdir/prev_result"
-  fi
-
-  # Use awk for safe substitution (handles special characters), stripping frontmatter
-  awk -v d="$tmpdir" '
-    function read_file(f,    line, content) {
-      while ((getline line < f) > 0) content = content (content ? "\n" : "") line
-      close(f); return content
-    }
-    BEGIN { commits=read_file(d"/commits"); learnings=read_file(d"/learnings"); task=read_file(d"/task"); diff=read_file(d"/diff"); prev_result=read_file(d"/prev_result") }
-    /^---$/ { if (++fm == 2) { next } }
-    fm < 2 && fm > 0 { next }
-    { gsub(/\{COMMITS\}/, commits); gsub(/\{LEARNINGS\}/, learnings); gsub(/\{TASK\}/, task); gsub(/\{DIFF\}/, diff); gsub(/\{PREV_RESULT\}/, prev_result); print }
-  ' "$template"
+  # awk substitution (ENVIRON avoids escaping issues with -v)
+  COMMITS="$commits" LEARNINGS="$learnings" TASK="$task" DIFF="$diff" PREV_RESULT="$prev_result" TASK_ID="$task_id" \
+    awk '
+      /^---$/ { if (++fm == 2) next }
+      fm < 2 && fm > 0 { next }
+      { gsub(/\{COMMITS\}/, ENVIRON["COMMITS"]); gsub(/\{LEARNINGS\}/, ENVIRON["LEARNINGS"]); gsub(/\{TASK\}/, ENVIRON["TASK"]); gsub(/\{DIFF\}/, ENVIRON["DIFF"]); gsub(/\{PREV_RESULT\}/, ENVIRON["PREV_RESULT"]); gsub(/\{TASK_ID\}/, ENVIRON["TASK_ID"]); print }
+    ' "$template"
 }
 
 # Run Claude with retry logic
@@ -192,17 +195,21 @@ run_claude() {
   local model="${4:-opus}"
   local max_retries=3
   local retry_delay=5
+  local log_file="${output_file%.json}.log"
 
   for attempt in $(seq 1 $max_retries); do
     debug "Attempt $attempt/$max_retries for $stage_name (model=$model)"
 
+    local agents_file="$SCRIPT_DIR/agents.json"
     local cmd_args=(
       claude
       --dangerously-skip-permissions
       -p "$(cat "$prompt_file")"
       --output-format json
       --model "$model"
+      --debug-file "$log_file"
     )
+    [[ -f "$agents_file" ]] && cmd_args+=(--agents "$(cat "$agents_file")")
 
     if $DRY_RUN; then
       log "[DRY-RUN] Would run: ${cmd_args[*]:0:5}... > $output_file"
@@ -211,7 +218,8 @@ run_claude() {
     fi
 
     local exit_code=0
-    CLAUDE_CODE_TASK_LIST_ID="kern-$stage_name" \
+    CLAUDE_CODE_ENABLE_TASKS=true \
+    CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH" \
       "${cmd_args[@]}" > "$output_file" 2>&1 || exit_code=$?
 
     # Check if output is valid JSON
@@ -243,8 +251,8 @@ run_stage() {
   local name="$1" template="$2" output="$3"
   local prev_output="${4:-}"  # Optional: previous stage output file
 
-  # Parse config from frontmatter
-  local model=$(parse_frontmatter "$template" "model")
+  # Parse model from frontmatter (inline - used only here)
+  local model=$(awk '/^---$/{if(++c==2)exit} c==1&&$1=="model:"{gsub(/^[^:]+: */,"");print;exit}' "$template")
   debug "Stage $name: model=${model:-sonnet}"
 
   local prompt_file=$(mktemp)
@@ -253,37 +261,35 @@ run_stage() {
   run_claude "$name" "$prompt_file" "$output" "${model:-sonnet}"
 }
 
+# Execute a stage with consistent logging/error handling
+# Usage: execute_stage <num> <label> <name> [prev_num] [exit_on_fail]
+# - num: stage number (0-3)
+# - label: display label for logging (e.g., "Sync Task Queue")
+# - name: template name without number prefix (e.g., "generate")
+# - prev_num: previous stage number for context (optional)
+# - exit_on_fail: "true" to exit on failure (default: false)
+execute_stage() {
+  local num="$1" label="$2" name="$3"
+  local prev_num="${4:-}" exit_on_fail="${5:-false}"
+  local output=$(stage_file "$num")
+  local prev_output=""
+  [[ -n "$prev_num" ]] && prev_output=$(stage_file "$prev_num")
 
-# Check if a stage output file is valid (exists and has .result field)
-stage_complete() {
-  local stage_file="$1"
-  [[ -f "$stage_file" ]] && jq -e '.result' "$stage_file" >/dev/null 2>&1
-}
-
-# Detect where to resume based on SPEC.md + stage files
-# Sets RESUME_STAGE to: "" (fresh), "implement", or "commit"
-detect_resume_stage() {
-  RESUME_STAGE=""
-
-  # No in-progress task = fresh start
-  grep -q '^\- \[~\]' "$SPEC" 2>/dev/null || return 0
-
-  # Check stage completion to determine resume point
-  if stage_complete "$OUTPUT_DIR/stage2.json"; then
-    RESUME_STAGE="commit"
-  elif stage_complete "$OUTPUT_DIR/stage1.json"; then
-    RESUME_STAGE="implement"
+  log "Stage $num: $label"
+  if ! run_stage "$name" "$PROMPTS/${num}_${name}.md" "$output" "$prev_output"; then
+    log "Stage $num failed"
+    $exit_on_fail && exit 1
   fi
-  # else: research incomplete, start from beginning
+  show_result "$output"
 }
 
-# Check if we should skip a stage (already completed, resuming from later)
-should_skip_stage() {
-  case "$RESUME_STAGE" in
-    implement) [[ "$1" == "research" ]] ;;
-    commit)    [[ "$1" == "research" || "$1" == "implement" ]] ;;
-    *)         false ;;
-  esac
+# Detect where to resume based on task queue + stage files
+# Sets RESUME_FROM to: 1 (research), 2 (implement), or 3 (commit)
+detect_resume_stage() {
+  RESUME_FROM=1
+  find_task_by_status "in_progress" >/dev/null || return 0
+  check_stage_result 2 >/dev/null && RESUME_FROM=3 && return 0
+  check_stage_result 1 >/dev/null && RESUME_FROM=2
 }
 
 # === Main ===
@@ -312,11 +318,11 @@ mkdir -p "$OUTPUT_DIR"
 # === Validate Required Files ===
 if [[ ! -f "$SPEC" ]]; then
   log "ERROR: $SPEC not found"
-  log "Create a SPEC.md with tasks: - [ ] Task description"
+  log "Create a SPEC.md with tasks (any checkbox format works)"
   exit 1
 fi
 
-for prompt in 1_research 2_implement 3_commit; do
+for prompt in 0_generate 1_research 2_implement 3_commit; do
   if [[ ! -f "$PROMPTS/${prompt}.md" ]]; then
     log "ERROR: Missing prompt template: $PROMPTS/${prompt}.md"
     exit 1
@@ -330,90 +336,71 @@ log "Configuration: max_iter=$MAX_ITER delay=${DELAY}s"
 
 # Detect resume state from SPEC.md + stage files
 detect_resume_stage
-if [[ -n "$RESUME_STAGE" ]]; then
-  log "Resuming from stage: $RESUME_STAGE"
-fi
+[[ $RESUME_FROM -gt 1 ]] && log "Resuming from stage: $RESUME_FROM"
 
 for i in $(seq 1 $MAX_ITER); do
   log "=== Iteration $i/$MAX_ITER ==="
 
-  # Exit early if no tasks remain
-  if ! grep -qE '^\- \[[ ~]\]' "$SPEC" 2>/dev/null; then
-    log "All tasks complete"
-    exit 0
-  fi
+  # === Stage 0: Sync Task Queue ===
+  execute_stage 0 "Sync Task Queue" "generate" "" true
 
   # === Stage 1: Research ===
-  if should_skip_stage "research"; then
+  if [[ $RESUME_FROM -gt 1 ]]; then
     log "Stage 1: Skipped (resuming)"
   else
-    log "Stage 1: Select and Research"
-
-    if ! run_stage "research" "$PROMPTS/1_research.md" "$OUTPUT_DIR/stage1.json"; then
-      log "Stage 1 failed"
-      exit 1
-    fi
-    show_result "$OUTPUT_DIR/stage1.json"
+    execute_stage 1 "Select and Research" "research" "" true
 
     # Validate JSON output
-    if ! jq -e '.result' "$OUTPUT_DIR/stage1.json" >/dev/null 2>&1; then
-      log "WARNING: Stage 1 output missing 'result' field"
-    fi
+    check_stage_result 1 >/dev/null || log "WARNING: Stage 1 output missing 'result' field"
 
-    # Check if no task available
-    if jq -r '.result // ""' "$OUTPUT_DIR/stage1.json" | grep -q "NO_TASK"; then
-      log "No task available"
-      exit 0
-    fi
-
-    # Verify a task was selected
-    if ! grep -q '\[~\]' "$SPEC"; then
+    # Verify a task was selected (check queue state, not result text)
+    if ! find_task_by_status "in_progress" >/dev/null; then
+      if ! find_task_by_status "pending" >/dev/null; then
+        log "No tasks available"
+        exit 0
+      fi
       log "No task marked in-progress after Stage 1"
       exit 1
     fi
-
-    # Validate SPEC.md format
-    validate_spec 1
   fi
+
+  # Capture task ID for this iteration (used in prompts and outcome detection)
+  CURRENT_TASK_ID=$(get_current_task_id) || CURRENT_TASK_ID=""
+  debug "Current task ID: $CURRENT_TASK_ID"
 
   # === Stage 2: Implement ===
-  if should_skip_stage "implement"; then
+  if [[ $RESUME_FROM -gt 2 ]]; then
     log "Stage 2: Skipped (resuming)"
   else
-    log "Stage 2: Plan and Implement"
-
-    if ! run_stage "implement" "$PROMPTS/2_implement.md" "$OUTPUT_DIR/stage2.json" "$OUTPUT_DIR/stage1.json"; then
-      log "Stage 2 failed"
-      # Continue to check for partial changes
-    fi
-    show_result "$OUTPUT_DIR/stage2.json"
+    execute_stage 2 "Plan and Implement" "implement" 1
   fi
 
-  # Validate JSON and extract result
-  if ! jq -e '.result' "$OUTPUT_DIR/stage2.json" >/dev/null 2>&1; then
-    log "WARNING: Stage 2 output missing 'result' field"
-    result=""
-  else
-    result=$(jq -r '.result // ""' "$OUTPUT_DIR/stage2.json" | tail -1)
-  fi
+  # Detect outcome via queue state (not text parsing)
+  task_status=""
+  [[ -n "$CURRENT_TASK_ID" ]] && task_status=$(get_task_status "$CURRENT_TASK_ID")
 
-  case "$result" in
-    *SUCCESS*)
+  case "$task_status" in
+    completed)
       log "Implementation succeeded"
-      validate_spec 2
       ;;
-    *DECOMPOSED*)
-      log "Task decomposed into subtasks, continuing to next iteration"
-      [ $i -lt $MAX_ITER ] && sleep $DELAY
-      continue
-      ;;
-    *SKIPPED*)
+    pending)
       log "Task skipped, continuing to next iteration"
       [ $i -lt $MAX_ITER ] && sleep $DELAY
       continue
       ;;
+    in_progress)
+      # Could be decomposed (subtasks created) or failed
+      # Check for uncommitted changes to decide
+      if ! git diff --quiet || ! git diff --cached --quiet; then
+        log "Task in progress with changes"
+      else
+        log "Task decomposed or no changes, continuing"
+        [ $i -lt $MAX_ITER ] && sleep $DELAY
+        continue
+      fi
+      ;;
     *)
-      log "Implementation did not succeed (result: $result)"
+      log "Unknown task state (status: $task_status)"
       log "Check $OUTPUT_DIR/stage2.json for details"
       # Continue anyway to see if there are uncommitted changes worth committing
       ;;
@@ -427,20 +414,14 @@ for i in $(seq 1 $MAX_ITER); do
     continue
   fi
 
-  log "Stage 3: Review and Commit"
-
-  if ! run_stage "commit" "$PROMPTS/3_commit.md" "$OUTPUT_DIR/stage3.json" "$OUTPUT_DIR/stage2.json"; then
-    log "Stage 3 failed"
-    # Don't exit - changes are still there for manual commit
-  fi
-  show_result "$OUTPUT_DIR/stage3.json"
+  execute_stage 3 "Review and Commit" "commit" 2
 
   # Show commit result
   commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
   log "Committed: $commit_hash"
 
   # Clear resume state after first iteration completes
-  RESUME_STAGE=""
+  RESUME_FROM=1
 
   # Clean up stage files for next iteration
   rm -f "$OUTPUT_DIR"/stage*.json

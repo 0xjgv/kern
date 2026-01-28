@@ -55,6 +55,7 @@ if ! curl -fsSL "$DOWNLOAD_URL" | tar xz -C "$KERN_DIR" 2>/dev/null; then
   cp "$TEMP_DIR"/kern-main/kern.sh "$KERN_DIR/"
   cp -r "$TEMP_DIR"/kern-main/prompts "$KERN_DIR/"
   [ -f "$TEMP_DIR"/kern-main/README.md ] && cp "$TEMP_DIR"/kern-main/README.md "$KERN_DIR/"
+  [ -f "$TEMP_DIR"/kern-main/agents.json ] && cp "$TEMP_DIR"/kern-main/agents.json "$KERN_DIR/"
 fi
 
 # Create symlink
