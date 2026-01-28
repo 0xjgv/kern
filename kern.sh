@@ -271,6 +271,28 @@ stage_complete() {
   [[ -f "$stage_file" ]] && jq -e '.result' "$stage_file" >/dev/null 2>&1
 }
 
+# Execute a stage with consistent logging/error handling
+# Usage: execute_stage <num> <label> <name> [prev_num] [exit_on_fail]
+# - num: stage number (0-3)
+# - label: display label for logging (e.g., "Sync Task Queue")
+# - name: template name without number prefix (e.g., "generate")
+# - prev_num: previous stage number for context (optional)
+# - exit_on_fail: "true" to exit on failure (default: false)
+execute_stage() {
+  local num="$1" label="$2" name="$3"
+  local prev_num="${4:-}" exit_on_fail="${5:-false}"
+  local output="$OUTPUT_DIR/stage${num}.json"
+  local prev_output=""
+  [[ -n "$prev_num" ]] && prev_output="$OUTPUT_DIR/stage${prev_num}.json"
+
+  log "Stage $num: $label"
+  if ! run_stage "$name" "$PROMPTS/${num}_${name}.md" "$output" "$prev_output"; then
+    log "Stage $num failed"
+    $exit_on_fail && exit 1
+  fi
+  show_result "$output"
+}
+
 # Detect where to resume based on task queue + stage files
 # Sets RESUME_FROM to: 1 (research), 2 (implement), or 3 (commit)
 detect_resume_stage() {
@@ -330,24 +352,13 @@ for i in $(seq 1 $MAX_ITER); do
   log "=== Iteration $i/$MAX_ITER ==="
 
   # === Stage 0: Sync Task Queue ===
-  log "Stage 0: Sync Task Queue"
-  if ! run_stage "generate" "$PROMPTS/0_generate.md" "$OUTPUT_DIR/stage0.json"; then
-    log "Stage 0 failed"
-    exit 1
-  fi
-  show_result "$OUTPUT_DIR/stage0.json"
+  execute_stage 0 "Sync Task Queue" "generate" "" true
 
   # === Stage 1: Research ===
   if [[ $RESUME_FROM -gt 1 ]]; then
     log "Stage 1: Skipped (resuming)"
   else
-    log "Stage 1: Select and Research"
-
-    if ! run_stage "research" "$PROMPTS/1_research.md" "$OUTPUT_DIR/stage1.json"; then
-      log "Stage 1 failed"
-      exit 1
-    fi
-    show_result "$OUTPUT_DIR/stage1.json"
+    execute_stage 1 "Select and Research" "research" "" true
 
     # Validate JSON output
     stage_complete "$OUTPUT_DIR/stage1.json" || log "WARNING: Stage 1 output missing 'result' field"
@@ -368,17 +379,10 @@ for i in $(seq 1 $MAX_ITER); do
   debug "Current task ID: $CURRENT_TASK_ID"
 
   # === Stage 2: Implement ===
-
   if [[ $RESUME_FROM -gt 2 ]]; then
     log "Stage 2: Skipped (resuming)"
   else
-    log "Stage 2: Plan and Implement"
-
-    if ! run_stage "implement" "$PROMPTS/2_implement.md" "$OUTPUT_DIR/stage2.json" "$OUTPUT_DIR/stage1.json"; then
-      log "Stage 2 failed"
-      # Continue to check for partial changes
-    fi
-    show_result "$OUTPUT_DIR/stage2.json"
+    execute_stage 2 "Plan and Implement" "implement" 1
   fi
 
   # Detect outcome via queue state (not text parsing)
@@ -420,13 +424,7 @@ for i in $(seq 1 $MAX_ITER); do
     continue
   fi
 
-  log "Stage 3: Review and Commit"
-
-  if ! run_stage "commit" "$PROMPTS/3_commit.md" "$OUTPUT_DIR/stage3.json" "$OUTPUT_DIR/stage2.json"; then
-    log "Stage 3 failed"
-    # Don't exit - changes are still there for manual commit
-  fi
-  show_result "$OUTPUT_DIR/stage3.json"
+  execute_stage 3 "Review and Commit" "commit" 2
 
   # Show commit result
   commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")

@@ -3,7 +3,9 @@
 
   1. [x] Use show_result() consistently
      Consolidated last inline jq call in build_prompt() at line 181.
-  2. [ ] Extract execute_stage() wrapper (~40 lines saved)
+  2. [x] Extract execute_stage() wrapper (~40 lines saved)
+     Added execute_stage(num, label, name, prev_num, exit_on_fail) wrapper at line 274.
+     Refactored 4 stage calls to use the wrapper. Net reduction: 28 lines.
   3. [ ] Consolidate stage validation with get_stage_result()
   4. [ ] Generic has_task_status() checker
   5. [ ] Stage file path helper stage_file()
