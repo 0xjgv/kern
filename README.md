@@ -204,9 +204,11 @@ Stage 2 outputs one of:
 
 To cut a new release:
 
-1. Push commits to main
-2. Go to **Actions → Release → Run workflow**
-3. Enter version (e.g., `0.1.4`) and run
+```bash
+./scripts/release.sh 0.1.5
+```
+
+Or manually: **Actions → Release → Run workflow** → enter version
 
 The workflow:
 
