@@ -30,12 +30,6 @@ SPEC="./SPEC.md"
 LEARNINGS="./LEARNINGS.md"
 PROMPTS="$SCRIPT_DIR/prompts"
 
-# Task patterns - centralized for consistency
-TASK_PENDING='^\- \[ \]'       # - [ ] pending task
-TASK_PROGRESS='^\- \[~\]'      # - [~] in-progress
-TASK_COMPLETE='^\- \[x\]'      # - [x] complete
-TASK_ANY='^\- \[[ ~x]\]'       # Any task marker
-
 # Project+branch scoped directories (prevent collisions between repos/worktrees)
 PROJECT_ID=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
@@ -133,19 +127,11 @@ check_stale_lock() {
   rm -rf "$LOCKDIR"
 }
 
-# Extract current task + research notes from SPEC.md (fallback)
+# Extract current task from queue (for context injection into prompts)
 extract_task() {
-  awk '/^- \[~\]/{p=1; print; next} p && /^  /{print; next} p{exit}' "$SPEC" | head -50
-}
-
-# Check for any open tasks (pending or in-progress)
-has_open_tasks() {
-  grep -qE "$TASK_PENDING|$TASK_PROGRESS" "$SPEC" 2>/dev/null
-}
-
-# Check for in-progress task
-has_in_progress() {
-  grep -q "$TASK_PROGRESS" "$SPEC" 2>/dev/null
+  local task_file
+  task_file=$(find_task_by_status "in_progress") || return 0
+  jq -r '"- [~] \(.subject)\n  > \(.description // "")"' "$task_file" 2>/dev/null
 }
 
 # Find first task file matching a status; prints path if found
@@ -161,62 +147,13 @@ find_task_by_status() {
   return 1
 }
 
-# Check if task generation is needed (no pending tasks in Claude's queue)
+# Check if task queue has work (pending or in-progress)
+has_queued_work() {
+  find_task_by_status "pending" >/dev/null || find_task_by_status "in_progress" >/dev/null
+}
+
+# Check if task generation is needed (no pending tasks in queue)
 needs_generation() { ! find_task_by_status "pending" >/dev/null; }
-
-# Get current in-progress task from Claude's task list (for context injection)
-get_current_task() {
-  local task_file
-  task_file=$(find_task_by_status "in_progress") || return 1
-  jq -r '"- [~] \(.subject)\n  > **Description:** \(.description // "N/A")"' "$task_file" 2>/dev/null
-}
-
-# Validate SPEC.md task format at startup - warn on common issues
-validate_task_format() {
-  local issues=0
-
-  # Check for checkboxes without dash prefix (most common issue)
-  if grep -qE '^[[:space:]]*\[[ ~x]\]' "$SPEC" 2>/dev/null && \
-     ! grep -qE "$TASK_ANY" "$SPEC" 2>/dev/null; then
-    log "WARNING: Found tasks without '- ' prefix. Expected: '- [ ] Task'"
-    log "  Fix: Add '- ' before each checkbox"
-    ((issues++))
-  fi
-
-  # Check for asterisk bullets instead of dash
-  if grep -qE '^\* \[[ ~x]\]' "$SPEC" 2>/dev/null; then
-    log "WARNING: Found '* [ ]' format. Expected: '- [ ]'"
-    ((issues++))
-  fi
-
-  # Check for tabs instead of spaces in checkbox
-  if grep -qE '^\-[[:space:]]*\[[	 ]\]' "$SPEC" 2>/dev/null; then
-    log "WARNING: Found tabs in checkbox. Use space: '- [ ]'"
-    ((issues++))
-  fi
-
-  # Check for malformed double brackets
-  if grep -qE '^\- \[\[' "$SPEC" 2>/dev/null; then
-    log "WARNING: Malformed task marker (double bracket)"
-    ((issues++))
-  fi
-
-  [[ $issues -eq 0 ]] && return 0
-  log "Found $issues format issue(s) in $SPEC"
-  return 1
-}
-
-# Validate SPEC.md format after stage completion
-validate_spec() {
-  local stage="$1"
-  if grep -qE '^\- \[\[' "$SPEC" 2>/dev/null; then
-    log "WARNING: Malformed task marker in SPEC.md after Stage $stage"
-    return 1
-  fi
-  local count
-  count=$(grep -c "$TASK_PROGRESS" "$SPEC" 2>/dev/null) || count=0
-  [[ "$count" -le 1 ]] || { log "WARNING: Multiple in-progress tasks ($count) after Stage $stage"; return 1; }
-}
 
 # Build prompt with context substitution (strips frontmatter)
 build_prompt() {
@@ -271,6 +208,7 @@ run_claude() {
     fi
 
     local exit_code=0
+    CLAUDE_CODE_ENABLE_TASKS=true \
     CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH" \
       "${cmd_args[@]}" > "$output_file" 2>&1 || exit_code=$?
 
@@ -320,11 +258,11 @@ stage_complete() {
   [[ -f "$stage_file" ]] && jq -e '.result' "$stage_file" >/dev/null 2>&1
 }
 
-# Detect where to resume based on SPEC.md + stage files
+# Detect where to resume based on task queue + stage files
 # Sets RESUME_FROM to: 1 (research), 2 (implement), or 3 (commit)
 detect_resume_stage() {
   RESUME_FROM=1
-  has_in_progress || return 0
+  find_task_by_status "in_progress" >/dev/null || return 0
   stage_complete "$OUTPUT_DIR/stage2.json" && RESUME_FROM=3 && return 0
   stage_complete "$OUTPUT_DIR/stage1.json" && RESUME_FROM=2
 }
@@ -355,7 +293,7 @@ mkdir -p "$OUTPUT_DIR"
 # === Validate Required Files ===
 if [[ ! -f "$SPEC" ]]; then
   log "ERROR: $SPEC not found"
-  log "Create a SPEC.md with tasks: - [ ] Task description"
+  log "Create a SPEC.md with tasks (any checkbox format works)"
   exit 1
 fi
 
@@ -378,8 +316,8 @@ detect_resume_stage
 for i in $(seq 1 $MAX_ITER); do
   log "=== Iteration $i/$MAX_ITER ==="
 
-  # Exit early if no tasks remain in SPEC.md
-  if ! has_open_tasks; then
+  # Exit early if no work in queue and generation says no tasks
+  if ! has_queued_work && ! needs_generation; then
     log "All tasks complete"
     exit 0
   fi
@@ -424,14 +362,11 @@ for i in $(seq 1 $MAX_ITER); do
       exit 0
     fi
 
-    # Verify a task was selected
-    if ! has_in_progress; then
+    # Verify a task was selected (check queue, not SPEC.md)
+    if ! find_task_by_status "in_progress" >/dev/null; then
       log "No task marked in-progress after Stage 1"
       exit 1
     fi
-
-    # Validate SPEC.md format
-    validate_spec 1
   fi
 
   # === Stage 2: Implement ===
@@ -458,7 +393,6 @@ for i in $(seq 1 $MAX_ITER); do
   case "$result" in
     *SUCCESS*)
       log "Implementation succeeded"
-      validate_spec 2
       ;;
     *DECOMPOSED*)
       log "Task decomposed into subtasks, continuing to next iteration"
