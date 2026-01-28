@@ -196,9 +196,12 @@ git push origin v1.0.0
 ```
 
 The release workflow:
-1. Creates tarball with `kern.sh`, `prompts/`, `README.md`
-2. Publishes to GitHub Releases with auto-generated notes
-3. Users receive updates via `kern --update`
+1. Injects version from git tag into `kern.sh`
+2. Creates tarball with `kern.sh`, `prompts/`, `README.md`
+3. Publishes to GitHub Releases with auto-generated notes
+4. Users receive updates via `kern --update`
+
+No need to manually update `VERSION` in `kern.sh` — it's derived from the tag.
 
 ## CI/CD
 

@@ -15,6 +15,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Inject version from tag
+        run: sed -i "s/^VERSION=.*/VERSION=\"${GITHUB_REF_NAME#v}\"/" kern.sh
+
       - name: Create tarball
         run: |
           mkdir -p dist

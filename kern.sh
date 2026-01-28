@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# === Version ===
+# === Version (injected from git tag during release) ===
 VERSION="0.1.0"
 REPO="0xjgv/kern"
 
