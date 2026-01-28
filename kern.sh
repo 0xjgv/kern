@@ -309,6 +309,20 @@ caffeinate -im -w $$ 2>/dev/null &
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
+# === Validate Required Files ===
+if [[ ! -f "$SPEC" ]]; then
+  log "ERROR: $SPEC not found"
+  log "Create a SPEC.md with tasks: - [ ] Task description"
+  exit 1
+fi
+
+for prompt in 1_research 2_implement 3_commit; do
+  if [[ ! -f "$PROMPTS/${prompt}.md" ]]; then
+    log "ERROR: Missing prompt template: $PROMPTS/${prompt}.md"
+    exit 1
+  fi
+done
+
 # Show configuration
 log "Configuration: max_iter=$MAX_ITER delay=${DELAY}s"
 ! $VERBOSE || log "Verbose mode enabled"
