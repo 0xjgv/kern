@@ -2,7 +2,7 @@
 set -e
 
 # === Version (injected from git tag during release) ===
-VERSION="0.1.0"
+VERSION="dev"
 REPO="0xjgv/kern"
 
 # Handle --version and --update before anything else
