@@ -49,12 +49,14 @@ Run `make check` or task-specific validation.
 ### Handle Results
 
 **SUCCESS:**
+
 1. `TaskUpdate` → mark `completed`
 2. Mark `[x]` in SPEC.md
 3. Leave uncommitted (Stage 3 commits)
 4. Output: `SUCCESS`
 
 **FAILURE:**
+
 1. `TaskUpdate` metadata with attempt notes
 2. **Tier 1** (attempts 1-2): Try different approach
 3. **Tier 2** (after 3 fails): `TaskCreate` subtasks → output `DECOMPOSED`

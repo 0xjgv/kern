@@ -17,11 +17,6 @@ Select next task from queue and research the codebase.
 
 ## Instructions
 
-### Pre-flight
-
-1. `git status` - warn if dirty, continue
-2. `git diff HEAD~1 --stat` for context
-
 ### Select Task
 
 1. `TaskList` to see queue
@@ -33,7 +28,7 @@ If no available task: output `NO_TASK` and stop.
 
 ### Research
 
-If task lacks research metadata, explore codebase:
+If task lacks research metadata, explore the codebase using the following agents:
 
 - `codebase-locator`: Find relevant files (paths + lines)
 - `codebase-pattern-finder`: Identify patterns to follow

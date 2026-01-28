@@ -30,6 +30,12 @@ SPEC="./SPEC.md"
 LEARNINGS="./LEARNINGS.md"
 PROMPTS="$SCRIPT_DIR/prompts"
 
+# Task patterns - centralized for consistency
+TASK_PENDING='^\- \[ \]'       # - [ ] pending task
+TASK_PROGRESS='^\- \[~\]'      # - [~] in-progress
+TASK_COMPLETE='^\- \[x\]'      # - [x] complete
+TASK_ANY='^\- \[[ ~x]\]'       # Any task marker
+
 # Project+branch scoped directories (prevent collisions between repos/worktrees)
 PROJECT_ID=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
@@ -116,15 +122,6 @@ log() { echo "[$(date '+%H:%M:%S')] $1" >&2; }
 debug() { ! $VERBOSE || echo "[$(date '+%H:%M:%S')] [DEBUG] $1" >&2; }
 show_result() { jq -r '.result // ""' "$1" 2>/dev/null; }
 
-# Parse frontmatter value from prompt file
-parse_frontmatter() {
-  local file="$1" key="$2"
-  awk -v key="$key" '
-    /^---$/ { if (++c == 2) exit }
-    c == 1 && $1 == key":" { gsub(/^[^:]+: */, ""); print; exit }
-  ' "$file"
-}
-
 # Check if lock is stale (process no longer running)
 check_stale_lock() {
   [[ -d "$LOCKDIR" ]] || return 0
@@ -141,37 +138,61 @@ extract_task() {
   awk '/^- \[~\]/{p=1; print; next} p && /^  /{print; next} p{exit}' "$SPEC" | head -50
 }
 
-# Check if task generation is needed (no pending tasks in Claude's queue)
-needs_generation() {
-  local task_dir="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID"
-  # If task directory doesn't exist, we need generation
-  [[ ! -d "$task_dir" ]] && return 0
-  # Check for pending tasks in the queue
-  local pending=0
-  local task_file
-  for task_file in "$task_dir"/*.json; do
-    [[ -f "$task_file" ]] || continue
-    local status
-    status=$(jq -r '.status // "unknown"' "$task_file" 2>/dev/null)
-    [[ "$status" == "pending" ]] && ((pending++))
-  done
-  [[ "$pending" -eq 0 ]]
-}
-
-# Get current in-progress task from Claude's task list (for context injection)
-get_current_task() {
+# Find first task file matching a status; prints path if found
+find_task_by_status() {
+  local target_status="$1"
   local task_dir="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID"
   [[ -d "$task_dir" ]] || return 1
   local task_file
   for task_file in "$task_dir"/*.json; do
     [[ -f "$task_file" ]] || continue
-    local status
-    status=$(jq -r '.status // "unknown"' "$task_file" 2>/dev/null)
-    if [[ "$status" == "in_progress" ]]; then
-      jq -r '"- [~] \(.subject)\n  > **Description:** \(.description // "N/A")"' "$task_file" 2>/dev/null
-      return 0
-    fi
+    [[ "$(jq -r '.status // ""' "$task_file" 2>/dev/null)" == "$target_status" ]] && { echo "$task_file"; return 0; }
   done
+  return 1
+}
+
+# Check if task generation is needed (no pending tasks in Claude's queue)
+needs_generation() { ! find_task_by_status "pending" >/dev/null; }
+
+# Get current in-progress task from Claude's task list (for context injection)
+get_current_task() {
+  local task_file
+  task_file=$(find_task_by_status "in_progress") || return 1
+  jq -r '"- [~] \(.subject)\n  > **Description:** \(.description // "N/A")"' "$task_file" 2>/dev/null
+}
+
+# Validate SPEC.md task format at startup - warn on common issues
+validate_task_format() {
+  local issues=0
+
+  # Check for checkboxes without dash prefix (most common issue)
+  if grep -qE '^[[:space:]]*\[[ ~x]\]' "$SPEC" 2>/dev/null && \
+     ! grep -qE "$TASK_ANY" "$SPEC" 2>/dev/null; then
+    log "WARNING: Found tasks without '- ' prefix. Expected: '- [ ] Task'"
+    log "  Fix: Add '- ' before each checkbox"
+    ((issues++))
+  fi
+
+  # Check for asterisk bullets instead of dash
+  if grep -qE '^\* \[[ ~x]\]' "$SPEC" 2>/dev/null; then
+    log "WARNING: Found '* [ ]' format. Expected: '- [ ]'"
+    ((issues++))
+  fi
+
+  # Check for tabs instead of spaces in checkbox
+  if grep -qE '^\-[[:space:]]*\[[	 ]\]' "$SPEC" 2>/dev/null; then
+    log "WARNING: Found tabs in checkbox. Use space: '- [ ]'"
+    ((issues++))
+  fi
+
+  # Check for malformed double brackets
+  if grep -qE '^\- \[\[' "$SPEC" 2>/dev/null; then
+    log "WARNING: Malformed task marker (double bracket)"
+    ((issues++))
+  fi
+
+  [[ $issues -eq 0 ]] && return 0
+  log "Found $issues format issue(s) in $SPEC"
   return 1
 }
 
@@ -183,41 +204,30 @@ validate_spec() {
     return 1
   fi
   local count
-  count=$(grep -c '^\- \[~\]' "$SPEC" 2>/dev/null) || count=0
+  count=$(grep -c "$TASK_PROGRESS" "$SPEC" 2>/dev/null) || count=0
   [[ "$count" -le 1 ]] || { log "WARNING: Multiple in-progress tasks ($count) after Stage $stage"; return 1; }
 }
 
-# Build prompt using temp files for safe variable injection (strips frontmatter)
+# Build prompt with context substitution (strips frontmatter)
 build_prompt() {
   local template="$1"
-  local prev_result_file="${2:-}"  # Optional: previous stage JSON
-  local tmpdir=$(mktemp -d)
-  trap "rm -rf '$tmpdir'" RETURN
+  local prev_result_file="${2:-}"
 
-  # Gather context data into temp files
-  git log -5 --format="[%h] %s" --stat 2>&1 | head -80 > "$tmpdir/commits" || echo "No commits yet" > "$tmpdir/commits"
-  cat "$LEARNINGS" 2>/dev/null > "$tmpdir/learnings" || echo "No learnings yet." > "$tmpdir/learnings"
-  extract_task > "$tmpdir/task"
-  git diff --stat 2>&1 | head -50 > "$tmpdir/diff" || echo "No changes" > "$tmpdir/diff"
+  # Gather context directly into variables
+  local commits learnings task diff prev_result
+  commits=$(git log -5 --format="[%h] %s" --stat 2>&1 | head -80) || commits="No commits yet"
+  learnings=$(cat "$LEARNINGS" 2>/dev/null) || learnings="No learnings yet."
+  task=$(extract_task)
+  diff=$(git diff --stat 2>&1 | head -50) || diff="No changes"
+  [[ -n "$prev_result_file" && -f "$prev_result_file" ]] && prev_result=$(jq -r '.result // ""' "$prev_result_file") || prev_result=""
 
-  # Add previous result if provided
-  if [[ -n "$prev_result_file" ]] && [[ -f "$prev_result_file" ]]; then
-    jq -r '.result // ""' "$prev_result_file" > "$tmpdir/prev_result"
-  else
-    echo "" > "$tmpdir/prev_result"
-  fi
-
-  # Use awk for safe substitution (handles special characters), stripping frontmatter
-  awk -v d="$tmpdir" '
-    function read_file(f,    line, content) {
-      while ((getline line < f) > 0) content = content (content ? "\n" : "") line
-      close(f); return content
-    }
-    BEGIN { commits=read_file(d"/commits"); learnings=read_file(d"/learnings"); task=read_file(d"/task"); diff=read_file(d"/diff"); prev_result=read_file(d"/prev_result") }
-    /^---$/ { if (++fm == 2) { next } }
-    fm < 2 && fm > 0 { next }
-    { gsub(/\{COMMITS\}/, commits); gsub(/\{LEARNINGS\}/, learnings); gsub(/\{TASK\}/, task); gsub(/\{DIFF\}/, diff); gsub(/\{PREV_RESULT\}/, prev_result); print }
-  ' "$template"
+  # awk substitution (ENVIRON avoids escaping issues with -v)
+  COMMITS="$commits" LEARNINGS="$learnings" TASK="$task" DIFF="$diff" PREV_RESULT="$prev_result" \
+    awk '
+      /^---$/ { if (++fm == 2) next }
+      fm < 2 && fm > 0 { next }
+      { gsub(/\{COMMITS\}/, ENVIRON["COMMITS"]); gsub(/\{LEARNINGS\}/, ENVIRON["LEARNINGS"]); gsub(/\{TASK\}/, ENVIRON["TASK"]); gsub(/\{DIFF\}/, ENVIRON["DIFF"]); gsub(/\{PREV_RESULT\}/, ENVIRON["PREV_RESULT"]); print }
+    ' "$template"
 }
 
 # Run Claude with retry logic
@@ -283,8 +293,8 @@ run_stage() {
   local name="$1" template="$2" output="$3"
   local prev_output="${4:-}"  # Optional: previous stage output file
 
-  # Parse config from frontmatter
-  local model=$(parse_frontmatter "$template" "model")
+  # Parse model from frontmatter (inline - used only here)
+  local model=$(awk '/^---$/{if(++c==2)exit} c==1&&$1=="model:"{gsub(/^[^:]+: */,"");print;exit}' "$template")
   debug "Stage $name: model=${model:-sonnet}"
 
   local prompt_file=$(mktemp)
@@ -301,29 +311,12 @@ stage_complete() {
 }
 
 # Detect where to resume based on SPEC.md + stage files
-# Sets RESUME_STAGE to: "" (fresh), "implement", or "commit"
+# Sets RESUME_FROM to: 1 (research), 2 (implement), or 3 (commit)
 detect_resume_stage() {
-  RESUME_STAGE=""
-
-  # No in-progress task = fresh start
+  RESUME_FROM=1
   grep -q '^\- \[~\]' "$SPEC" 2>/dev/null || return 0
-
-  # Check stage completion to determine resume point
-  if stage_complete "$OUTPUT_DIR/stage2.json"; then
-    RESUME_STAGE="commit"
-  elif stage_complete "$OUTPUT_DIR/stage1.json"; then
-    RESUME_STAGE="implement"
-  fi
-  # else: research incomplete, start from beginning
-}
-
-# Check if we should skip a stage (already completed, resuming from later)
-should_skip_stage() {
-  case "$RESUME_STAGE" in
-    implement) [[ "$1" == "research" ]] ;;
-    commit)    [[ "$1" == "research" || "$1" == "implement" ]] ;;
-    *)         false ;;
-  esac
+  stage_complete "$OUTPUT_DIR/stage2.json" && RESUME_FROM=3 && return 0
+  stage_complete "$OUTPUT_DIR/stage1.json" && RESUME_FROM=2
 }
 
 # === Main ===
@@ -370,9 +363,7 @@ log "Configuration: max_iter=$MAX_ITER delay=${DELAY}s"
 
 # Detect resume state from SPEC.md + stage files
 detect_resume_stage
-if [[ -n "$RESUME_STAGE" ]]; then
-  log "Resuming from stage: $RESUME_STAGE"
-fi
+[[ $RESUME_FROM -gt 1 ]] && log "Resuming from stage: $RESUME_FROM"
 
 for i in $(seq 1 $MAX_ITER); do
   log "=== Iteration $i/$MAX_ITER ==="
@@ -403,7 +394,7 @@ for i in $(seq 1 $MAX_ITER); do
   fi
 
   # === Stage 1: Research ===
-  if should_skip_stage "research"; then
+  if [[ $RESUME_FROM -gt 1 ]]; then
     log "Stage 1: Skipped (resuming)"
   else
     log "Stage 1: Select and Research"
@@ -415,9 +406,7 @@ for i in $(seq 1 $MAX_ITER); do
     show_result "$OUTPUT_DIR/stage1.json"
 
     # Validate JSON output
-    if ! jq -e '.result' "$OUTPUT_DIR/stage1.json" >/dev/null 2>&1; then
-      log "WARNING: Stage 1 output missing 'result' field"
-    fi
+    stage_complete "$OUTPUT_DIR/stage1.json" || log "WARNING: Stage 1 output missing 'result' field"
 
     # Check if no task available
     if jq -r '.result // ""' "$OUTPUT_DIR/stage1.json" | grep -q "NO_TASK"; then
@@ -436,7 +425,7 @@ for i in $(seq 1 $MAX_ITER); do
   fi
 
   # === Stage 2: Implement ===
-  if should_skip_stage "implement"; then
+  if [[ $RESUME_FROM -gt 2 ]]; then
     log "Stage 2: Skipped (resuming)"
   else
     log "Stage 2: Plan and Implement"
@@ -449,7 +438,7 @@ for i in $(seq 1 $MAX_ITER); do
   fi
 
   # Validate JSON and extract result
-  if ! jq -e '.result' "$OUTPUT_DIR/stage2.json" >/dev/null 2>&1; then
+  if ! stage_complete "$OUTPUT_DIR/stage2.json"; then
     log "WARNING: Stage 2 output missing 'result' field"
     result=""
   else
@@ -499,7 +488,7 @@ for i in $(seq 1 $MAX_ITER); do
   log "Committed: $commit_hash"
 
   # Clear resume state after first iteration completes
-  RESUME_STAGE=""
+  RESUME_FROM=1
 
   # Clean up stage files for next iteration
   rm -f "$OUTPUT_DIR"/stage*.json
