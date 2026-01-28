@@ -131,7 +131,7 @@ check_stale_lock() {
 extract_task() {
   local task_file
   task_file=$(find_task_by_status "in_progress") || return 0
-  jq -r '"- [~] \(.subject)\n  > \(.description // "")"' "$task_file" 2>/dev/null
+  jq -r '"Task ID: \(.id)\n- [~] \(.subject)\n  > \(.description // "")"' "$task_file" 2>/dev/null
 }
 
 # Find first task file matching a status; prints path if found

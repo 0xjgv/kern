@@ -19,7 +19,7 @@ Implement the current task based on research findings.
 
 {TASK}
 
-### Previous Stage Summary
+### Previous Stage Output
 
 {PREV_RESULT}
 
@@ -27,8 +27,8 @@ Implement the current task based on research findings.
 
 ### Get Task
 
-1. `TaskList` → find `in_progress` task
-2. `TaskGet` → retrieve details + research metadata
+1. `TaskGet` → use task ID from the current task context above
+2. Fallback: `TaskList` if ID missing
 
 ### Plan
 

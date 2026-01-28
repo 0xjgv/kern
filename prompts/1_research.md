@@ -20,7 +20,7 @@ Select next task from queue and research the codebase.
 ### Select Task
 
 1. `TaskList` to see queue
-2. Find first `pending` task with empty `blockedBy`
+2. Find first `pending` or `in_progress` task with empty `blockedBy`
 3. `TaskGet` for full details
 4. `TaskUpdate` to mark `in_progress`
 
@@ -43,10 +43,10 @@ Focus on: files to modify, patterns to follow (check Learnings!), constraints/go
 
 ### Sync SPEC.md
 
-Mark task `[~]` with research notes for human visibility.
+Mark task `[~]` with all the research notes for human visibility.
 
 ## Output
 
-Task marked `in_progress` with research metadata. SPEC.md synced.
+Task marked `in_progress` with all the research notes. SPEC.md synced.
 
 If no task: `NO_TASK`
