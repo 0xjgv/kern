@@ -1,10 +1,27 @@
 #!/bin/bash
 set -e
 
+# === Version ===
+VERSION="0.1.0"
+REPO="0xjgv/kern"
+
+# Handle --version and --update before anything else
+if [[ "${1:-}" == "--version" || "${1:-}" == "-V" ]]; then
+  echo "kern $VERSION"
+  exit 0
+fi
+
+if [[ "${1:-}" == "--update" ]]; then
+  echo "Updating kern..."
+  curl -fsSL "https://raw.githubusercontent.com/$REPO/main/install.sh" | sh
+  exit $?
+fi
+
 # === Configuration ===
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPEC="./SPEC.md"
 LEARNINGS="./LEARNINGS.md"
-PROMPTS="./arc/prompts"
+PROMPTS="$SCRIPT_DIR/prompts"
 
 # Project+branch scoped directories (prevent collisions between repos/worktrees)
 PROJECT_ID=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
@@ -30,6 +47,8 @@ Autonomous development pipeline - 3-stage task execution.
 Options:
   -v, --verbose    Enable verbose logging
   -n, --dry-run    Show what would be done without executing
+  -V, --version    Show version
+  --update         Update to latest version
   -h, --help       Show this help message
 
 Arguments:
@@ -37,10 +56,12 @@ Arguments:
   DELAY            Delay between iterations in seconds (default: 10)
 
 Examples:
-  ./arc/kern.sh              # Run 5 iterations
-  ./arc/kern.sh 10 30        # Run 10 iterations, 30s delay
-  ./arc/kern.sh -v 5         # Verbose mode, 5 iterations
-  ./arc/kern.sh -n           # Dry run to see what would happen
+  kern                 # Run 5 iterations
+  kern 10 30           # Run 10 iterations, 30s delay
+  kern -v 5            # Verbose mode, 5 iterations
+  kern -n              # Dry run to see what would happen
+  kern --version       # Show version
+  kern --update        # Update to latest version
 EOF
   exit 0
 }

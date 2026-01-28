@@ -1,6 +1,24 @@
-# Autonomous Development Pipeline
+# kern
 
-3-stage pipeline for autonomous task execution with context isolation and debuggability.
+Autonomous development pipeline — 3-stage task execution with context isolation and debuggability.
+
+## Installation
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xjgv/kern/main/install.sh | sh
+```
+
+### Requirements
+
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) — the AI that does the work
+- `jq` — JSON processing
+- `git` — version control
+
+### Update
+
+```bash
+kern --update
+```
 
 ## Architecture
 
@@ -27,43 +45,38 @@
 4. **Restricted commit**: Stage 3 can only run git commands
 5. **Natural coupling**: Research+Plan and Implement+Validate are tightly coupled
 
-## Files
+## Project Setup
+
+In your project, create:
 
 ```
 ./
 ├── SPEC.md              # Task list + research notes + attempt history
-├── LEARNINGS.md         # Accumulated insights (grows over time)
-└── arc/
-    ├── README.md        # This file (documentation)
-    ├── kern.sh          # Pipeline orchestrator
-    └── prompts/
-        ├── 1_research.md  # Stage 1 prompt template
-        ├── 2_implement.md # Stage 2 prompt template
-        └── 3_commit.md    # Stage 3 prompt template
+└── LEARNINGS.md         # Accumulated insights (grows over time)
 ```
+
+kern installs to `~/.local/share/kern/` with its prompts bundled.
 
 ## Usage
 
 ```bash
 # Show help
-./arc/kern.sh --help
+kern --help
 
 # Run 5 iterations (default)
-./arc/kern.sh
+kern
 
 # Run 10 iterations with 30s delay
-./arc/kern.sh 10 30
+kern 10 30
 
 # Verbose mode (shows debug info)
-./arc/kern.sh -v 5
+kern -v 5
 
 # Dry run (see what would happen without executing)
-./arc/kern.sh -n
+kern -n
 
 # Check stage outputs (project/branch scoped)
-cat /tmp/claude/kern/$PROJECT/$BRANCH/stage1.json | jq '.result'
-cat /tmp/claude/kern/$PROJECT/$BRANCH/stage2.json | jq '.result'
-cat /tmp/claude/kern/$PROJECT/$BRANCH/stage3.json | jq '.result'
+jq '.result' /tmp/claude/kern/$PROJECT/$BRANCH/stage*.json
 ```
 
 ## Features
