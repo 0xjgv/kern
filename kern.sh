@@ -138,6 +138,16 @@ extract_task() {
   awk '/^- \[~\]/{p=1; print; next} p && /^  /{print; next} p{exit}' "$SPEC" | head -50
 }
 
+# Check for any open tasks (pending or in-progress)
+has_open_tasks() {
+  grep -qE "$TASK_PENDING|$TASK_PROGRESS" "$SPEC" 2>/dev/null
+}
+
+# Check for in-progress task
+has_in_progress() {
+  grep -q "$TASK_PROGRESS" "$SPEC" 2>/dev/null
+}
+
 # Find first task file matching a status; prints path if found
 find_task_by_status() {
   local target_status="$1"
@@ -314,7 +324,7 @@ stage_complete() {
 # Sets RESUME_FROM to: 1 (research), 2 (implement), or 3 (commit)
 detect_resume_stage() {
   RESUME_FROM=1
-  grep -q '^\- \[~\]' "$SPEC" 2>/dev/null || return 0
+  has_in_progress || return 0
   stage_complete "$OUTPUT_DIR/stage2.json" && RESUME_FROM=3 && return 0
   stage_complete "$OUTPUT_DIR/stage1.json" && RESUME_FROM=2
 }
@@ -369,7 +379,7 @@ for i in $(seq 1 $MAX_ITER); do
   log "=== Iteration $i/$MAX_ITER ==="
 
   # Exit early if no tasks remain in SPEC.md
-  if ! grep -qE '^\- \[[ ~]\]' "$SPEC" 2>/dev/null; then
+  if ! has_open_tasks; then
     log "All tasks complete"
     exit 0
   fi
@@ -415,7 +425,7 @@ for i in $(seq 1 $MAX_ITER); do
     fi
 
     # Verify a task was selected
-    if ! grep -q '\[~\]' "$SPEC"; then
+    if ! has_in_progress; then
       log "No task marked in-progress after Stage 1"
       exit 1
     fi
