@@ -184,3 +184,63 @@ Stage 2 outputs one of:
 | Research | ~2K | 30-50K | Explores broadly, outputs compressed |
 | Implement | ~3K | 50-100K | Bulk of work, focused by task |
 | Commit | ~1K | 10-20K | Minimal, just review and commit |
+
+## Releasing
+
+To cut a new release:
+
+```bash
+# Tag and push (triggers GitHub Actions)
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The release workflow:
+1. Creates tarball with `kern.sh`, `prompts/`, `README.md`
+2. Publishes to GitHub Releases with auto-generated notes
+3. Users receive updates via `kern --update`
+
+## CI/CD
+
+Example GitHub Actions workflow to run kern on your repo:
+
+```yaml
+name: kern
+
+on:
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'Number of iterations'
+        default: '5'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          npm install -g @anthropic-ai/claude-code
+
+      - name: Install kern
+        run: curl -fsSL https://raw.githubusercontent.com/0xjgv/kern/main/install.sh | sh
+
+      - name: Run kern
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: kern ${{ inputs.iterations }}
+
+      - name: Push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git push
+```
+
+**Notes:**
+- Requires `ANTHROPIC_API_KEY` secret
+- Uses `workflow_dispatch` for manual triggers — adjust trigger as needed
+- Claude CLI requires Node.js 18+
