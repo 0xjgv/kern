@@ -24,8 +24,6 @@ Select next task from queue and research the codebase.
 3. `TaskGet` for full details
 4. `TaskUpdate` to mark `in_progress`
 
-If no available task: output `NO_TASK` and stop.
-
 ### Research
 
 If task lacks research metadata, explore the codebase using the following agents:
@@ -48,5 +46,3 @@ Mark task `[~]` with all the research notes for human visibility.
 ## Output
 
 Task marked `in_progress` with all the research notes. SPEC.md synced.
-
-If no task: `NO_TASK`

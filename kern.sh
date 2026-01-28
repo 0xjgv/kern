@@ -152,6 +152,20 @@ has_queued_work() {
   find_task_by_status "pending" >/dev/null || find_task_by_status "in_progress" >/dev/null
 }
 
+# Get ID of current in-progress task
+get_current_task_id() {
+  local task_file
+  task_file=$(find_task_by_status "in_progress") || return 1
+  jq -r '.id' "$task_file" 2>/dev/null
+}
+
+# Get status of a specific task by ID
+get_task_status() {
+  local task_id="$1"
+  local task_file="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID/$task_id.json"
+  [[ -f "$task_file" ]] && jq -r '.status // ""' "$task_file" 2>/dev/null
+}
+
 
 # Build prompt with context substitution (strips frontmatter)
 build_prompt() {
@@ -159,19 +173,20 @@ build_prompt() {
   local prev_result_file="${2:-}"
 
   # Gather context directly into variables
-  local commits learnings task diff prev_result
+  local commits learnings task diff prev_result task_id
   commits=$(git log -5 --format="[%h] %s" --stat 2>&1 | head -80) || commits="No commits yet"
   learnings=$(cat "$LEARNINGS" 2>/dev/null) || learnings="No learnings yet."
   task=$(extract_task)
   diff=$(git diff --stat 2>&1 | head -50) || diff="No changes"
   [[ -n "$prev_result_file" && -f "$prev_result_file" ]] && prev_result=$(jq -r '.result // ""' "$prev_result_file") || prev_result=""
+  task_id="${CURRENT_TASK_ID:-}"
 
   # awk substitution (ENVIRON avoids escaping issues with -v)
-  COMMITS="$commits" LEARNINGS="$learnings" TASK="$task" DIFF="$diff" PREV_RESULT="$prev_result" \
+  COMMITS="$commits" LEARNINGS="$learnings" TASK="$task" DIFF="$diff" PREV_RESULT="$prev_result" TASK_ID="$task_id" \
     awk '
       /^---$/ { if (++fm == 2) next }
       fm < 2 && fm > 0 { next }
-      { gsub(/\{COMMITS\}/, ENVIRON["COMMITS"]); gsub(/\{LEARNINGS\}/, ENVIRON["LEARNINGS"]); gsub(/\{TASK\}/, ENVIRON["TASK"]); gsub(/\{DIFF\}/, ENVIRON["DIFF"]); gsub(/\{PREV_RESULT\}/, ENVIRON["PREV_RESULT"]); print }
+      { gsub(/\{COMMITS\}/, ENVIRON["COMMITS"]); gsub(/\{LEARNINGS\}/, ENVIRON["LEARNINGS"]); gsub(/\{TASK\}/, ENVIRON["TASK"]); gsub(/\{DIFF\}/, ENVIRON["DIFF"]); gsub(/\{PREV_RESULT\}/, ENVIRON["PREV_RESULT"]); gsub(/\{TASK_ID\}/, ENVIRON["TASK_ID"]); print }
     ' "$template"
 }
 
@@ -337,20 +352,23 @@ for i in $(seq 1 $MAX_ITER); do
     # Validate JSON output
     stage_complete "$OUTPUT_DIR/stage1.json" || log "WARNING: Stage 1 output missing 'result' field"
 
-    # Check if no task available
-    if jq -r '.result // ""' "$OUTPUT_DIR/stage1.json" | grep -q "NO_TASK"; then
-      log "No task available"
-      exit 0
-    fi
-
-    # Verify a task was selected (check queue, not SPEC.md)
+    # Verify a task was selected (check queue state, not result text)
     if ! find_task_by_status "in_progress" >/dev/null; then
+      if ! find_task_by_status "pending" >/dev/null; then
+        log "No tasks available"
+        exit 0
+      fi
       log "No task marked in-progress after Stage 1"
       exit 1
     fi
   fi
 
+  # Capture task ID for this iteration (used in prompts and outcome detection)
+  CURRENT_TASK_ID=$(get_current_task_id) || CURRENT_TASK_ID=""
+  debug "Current task ID: $CURRENT_TASK_ID"
+
   # === Stage 2: Implement ===
+
   if [[ $RESUME_FROM -gt 2 ]]; then
     log "Stage 2: Skipped (resuming)"
   else
@@ -363,30 +381,32 @@ for i in $(seq 1 $MAX_ITER); do
     show_result "$OUTPUT_DIR/stage2.json"
   fi
 
-  # Validate JSON and extract result
-  if ! stage_complete "$OUTPUT_DIR/stage2.json"; then
-    log "WARNING: Stage 2 output missing 'result' field"
-    result=""
-  else
-    result=$(jq -r '.result // ""' "$OUTPUT_DIR/stage2.json" | tail -1)
-  fi
+  # Detect outcome via queue state (not text parsing)
+  task_status=""
+  [[ -n "$CURRENT_TASK_ID" ]] && task_status=$(get_task_status "$CURRENT_TASK_ID")
 
-  case "$result" in
-    *SUCCESS*)
+  case "$task_status" in
+    completed)
       log "Implementation succeeded"
       ;;
-    *DECOMPOSED*)
-      log "Task decomposed into subtasks, continuing to next iteration"
-      [ $i -lt $MAX_ITER ] && sleep $DELAY
-      continue
-      ;;
-    *SKIPPED*)
+    pending)
       log "Task skipped, continuing to next iteration"
       [ $i -lt $MAX_ITER ] && sleep $DELAY
       continue
       ;;
+    in_progress)
+      # Could be decomposed (subtasks created) or failed
+      # Check for uncommitted changes to decide
+      if ! git diff --quiet || ! git diff --cached --quiet; then
+        log "Task in progress with changes"
+      else
+        log "Task decomposed or no changes, continuing"
+        [ $i -lt $MAX_ITER ] && sleep $DELAY
+        continue
+      fi
+      ;;
     *)
-      log "Implementation did not succeed (result: $result)"
+      log "Unknown task state (status: $task_status)"
       log "Check $OUTPUT_DIR/stage2.json for details"
       # Continue anyway to see if there are uncommitted changes worth committing
       ;;

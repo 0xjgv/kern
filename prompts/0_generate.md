@@ -28,5 +28,3 @@ Populate Claude Code's task system from SPEC.md.
 ## Output
 
 Summary: tasks created, skipped, dependencies set.
-
-If no pending tasks in SPEC.md: `NO_TASKS`

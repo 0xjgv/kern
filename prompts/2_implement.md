@@ -17,6 +17,8 @@ Implement the current task based on research findings.
 
 ### Current Task
 
+ID: {TASK_ID}
+
 {TASK}
 
 ### Previous Stage Output
@@ -27,8 +29,7 @@ Implement the current task based on research findings.
 
 ### Get Task
 
-1. `TaskGet` → use task ID from the current task context above
-2. Fallback: `TaskList` if ID missing
+`TaskGet` with ID `{TASK_ID}` for full details including metadata.
 
 ### Plan
 
@@ -53,17 +54,16 @@ Run `make check` or task-specific validation.
 1. `TaskUpdate` → mark `completed`
 2. Mark `[x]` in SPEC.md
 3. Leave uncommitted (Stage 3 commits)
-4. Output: `SUCCESS`
 
 **FAILURE:**
 
 1. `TaskUpdate` metadata with attempt notes
 2. **Tier 1** (attempts 1-2): Try different approach
-3. **Tier 2** (after 3 fails): `TaskCreate` subtasks → output `DECOMPOSED`
-4. **Tier 3**: `TaskUpdate` back to `pending` → output `SKIPPED`
+3. **Tier 2** (after 3 fails): `TaskCreate` subtasks, keep task `in_progress`
+4. **Tier 3**: `TaskUpdate` back to `pending` (skip this iteration)
 
 **Rules:** Never repeat failed approaches. Read attempt metadata first.
 
 ## Output
 
-Final line: `SUCCESS` | `DECOMPOSED` | `SKIPPED` | `FAILED`
+Summary of actions taken and final task state.
