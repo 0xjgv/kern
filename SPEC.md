@@ -1,4 +1,4 @@
-- [x] Identify oportunities to simplify our codebase. come up with 7 different proposals
+- [x] Identify opportunities to simplify our codebase. come up with 7 different proposals
   > **Completed and committed.** All 7 proposals implemented: -55 net lines, eliminated temp files, DRY improvements
   > 1. ✓ Remove duplicate git status checks (prompts/1_research.md)
   > 2. ✓ Inline frontmatter parsing (used only once)
