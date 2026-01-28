@@ -115,6 +115,7 @@ trap cleanup EXIT
 log() { echo "[$(date '+%H:%M:%S')] $1" >&2; }
 debug() { ! $VERBOSE || echo "[$(date '+%H:%M:%S')] [DEBUG] $1" >&2; }
 show_result() { jq -r '.result // ""' "$1" 2>/dev/null; }
+stage_file() { echo "$OUTPUT_DIR/stage${1}.json"; }
 
 # Check if lock is stale (process no longer running)
 check_stale_lock() {
@@ -281,9 +282,9 @@ stage_complete() {
 execute_stage() {
   local num="$1" label="$2" name="$3"
   local prev_num="${4:-}" exit_on_fail="${5:-false}"
-  local output="$OUTPUT_DIR/stage${num}.json"
+  local output=$(stage_file "$num")
   local prev_output=""
-  [[ -n "$prev_num" ]] && prev_output="$OUTPUT_DIR/stage${prev_num}.json"
+  [[ -n "$prev_num" ]] && prev_output=$(stage_file "$prev_num")
 
   log "Stage $num: $label"
   if ! run_stage "$name" "$PROMPTS/${num}_${name}.md" "$output" "$prev_output"; then
@@ -298,8 +299,8 @@ execute_stage() {
 detect_resume_stage() {
   RESUME_FROM=1
   find_task_by_status "in_progress" >/dev/null || return 0
-  stage_complete "$OUTPUT_DIR/stage2.json" && RESUME_FROM=3 && return 0
-  stage_complete "$OUTPUT_DIR/stage1.json" && RESUME_FROM=2
+  stage_complete "$(stage_file 2)" && RESUME_FROM=3 && return 0
+  stage_complete "$(stage_file 1)" && RESUME_FROM=2
 }
 
 # === Main ===
@@ -361,7 +362,7 @@ for i in $(seq 1 $MAX_ITER); do
     execute_stage 1 "Select and Research" "research" "" true
 
     # Validate JSON output
-    stage_complete "$OUTPUT_DIR/stage1.json" || log "WARNING: Stage 1 output missing 'result' field"
+    stage_complete "$(stage_file 1)" || log "WARNING: Stage 1 output missing 'result' field"
 
     # Verify a task was selected (check queue state, not result text)
     if ! find_task_by_status "in_progress" >/dev/null; then

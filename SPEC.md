@@ -8,7 +8,9 @@
      Refactored 4 stage calls to use the wrapper. Net reduction: 28 lines.
   3. [ ] Consolidate stage validation with get_stage_result()
   4. [ ] Generic has_task_status() checker
-  5. [ ] Stage file path helper stage_file()
+  5. [x] Stage file path helper stage_file()
+     Added single-line helper `stage_file() { echo "$OUTPUT_DIR/stage${1}.json"; }` at line 118.
+     Replaced 5 occurrences in execute_stage(), detect_resume_stage(), and main loop.
   6. [ ] Result pattern checker check_stage_result()
   7. [ ] Invert resume logic with should_run_stage()
   Files: kern.sh, prompts/*.md
