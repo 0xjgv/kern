@@ -116,6 +116,7 @@ log() { echo "[$(date '+%H:%M:%S')] $1" >&2; }
 debug() { ! $VERBOSE || echo "[$(date '+%H:%M:%S')] [DEBUG] $1" >&2; }
 show_result() { jq -r '.result // ""' "$1" 2>/dev/null; }
 stage_file() { echo "$OUTPUT_DIR/stage${1}.json"; }
+check_stage_result() { local f=$(stage_file "$1"); [[ -f "$f" ]] && jq -er '.result // empty' "$f" 2>/dev/null; }
 
 # Check if lock is stale (process no longer running)
 check_stale_lock() {
@@ -265,13 +266,6 @@ run_stage() {
   run_claude "$name" "$prompt_file" "$output" "${model:-sonnet}"
 }
 
-
-# Check if a stage output file is valid (exists and has .result field)
-stage_complete() {
-  local stage_file="$1"
-  [[ -f "$stage_file" ]] && jq -e '.result' "$stage_file" >/dev/null 2>&1
-}
-
 # Execute a stage with consistent logging/error handling
 # Usage: execute_stage <num> <label> <name> [prev_num] [exit_on_fail]
 # - num: stage number (0-3)
@@ -299,8 +293,8 @@ execute_stage() {
 detect_resume_stage() {
   RESUME_FROM=1
   find_task_by_status "in_progress" >/dev/null || return 0
-  stage_complete "$(stage_file 2)" && RESUME_FROM=3 && return 0
-  stage_complete "$(stage_file 1)" && RESUME_FROM=2
+  check_stage_result 2 >/dev/null && RESUME_FROM=3 && return 0
+  check_stage_result 1 >/dev/null && RESUME_FROM=2
 }
 
 # === Main ===
@@ -362,7 +356,7 @@ for i in $(seq 1 $MAX_ITER); do
     execute_stage 1 "Select and Research" "research" "" true
 
     # Validate JSON output
-    stage_complete "$(stage_file 1)" || log "WARNING: Stage 1 output missing 'result' field"
+    check_stage_result 1 >/dev/null || log "WARNING: Stage 1 output missing 'result' field"
 
     # Verify a task was selected (check queue state, not result text)
     if ! find_task_by_status "in_progress" >/dev/null; then

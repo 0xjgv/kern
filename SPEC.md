@@ -11,6 +11,9 @@
   5. [x] Stage file path helper stage_file()
      Added single-line helper `stage_file() { echo "$OUTPUT_DIR/stage${1}.json"; }` at line 118.
      Replaced 5 occurrences in execute_stage(), detect_resume_stage(), and main loop.
-  6. [ ] Result pattern checker check_stage_result()
+  6. [x] Result pattern checker check_stage_result()
+     Added `check_stage_result()` at line 119. Combines validation + extraction.
+     Replaced stage_complete() calls in detect_resume_stage() and Stage 1 validation.
+     Removed unused stage_complete() function (~5 lines saved).
   7. [ ] Invert resume logic with should_run_stage()
   Files: kern.sh, prompts/*.md
