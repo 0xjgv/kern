@@ -15,9 +15,9 @@ else
   RED='' GREEN='' YELLOW='' NC=''
 fi
 
-info() { echo -e "${GREEN}==>${NC} $1"; }
-warn() { echo -e "${YELLOW}Warning:${NC} $1"; }
-error() { echo -e "${RED}Error:${NC} $1" >&2; exit 1; }
+info() { printf '%b\n' "${GREEN}==>${NC} $1"; }
+warn() { printf '%b\n' "${YELLOW}Warning:${NC} $1"; }
+error() { printf '%b\n' "${RED}Error:${NC} $1" >&2; exit 1; }
 
 # Dependency checks
 check_dep() {
