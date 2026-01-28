@@ -228,6 +228,7 @@ run_claude() {
   local model="${4:-opus}"
   local max_retries=3
   local retry_delay=5
+  local log_file="${output_file%.json}.log"
 
   for attempt in $(seq 1 $max_retries); do
     debug "Attempt $attempt/$max_retries for $stage_name (model=$model)"
@@ -239,6 +240,7 @@ run_claude() {
       -p "$(cat "$prompt_file")"
       --output-format json
       --model "$model"
+      --debug-file "$log_file"
     )
     [[ -f "$agents_file" ]] && cmd_args+=(--agents "$(cat "$agents_file")")
 
