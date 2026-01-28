@@ -1,7 +1,8 @@
 [x] Identify opportunities to simplify the codebase with 7 proposals
     Research: 10 simplification opportunities found in kern.sh (~21% reduction):
 
-  1. [ ] Use show_result() consistently (4 inline jq calls)
+  1. [x] Use show_result() consistently
+     Consolidated last inline jq call in build_prompt() at line 181.
   2. [ ] Extract execute_stage() wrapper (~40 lines saved)
   3. [ ] Consolidate stage validation with get_stage_result()
   4. [ ] Generic has_task_status() checker

@@ -178,7 +178,7 @@ build_prompt() {
   learnings=$(cat "$LEARNINGS" 2>/dev/null) || learnings="No learnings yet."
   task=$(extract_task)
   diff=$(git diff --stat 2>&1 | head -50) || diff="No changes"
-  [[ -n "$prev_result_file" && -f "$prev_result_file" ]] && prev_result=$(jq -r '.result // ""' "$prev_result_file") || prev_result=""
+  [[ -n "$prev_result_file" && -f "$prev_result_file" ]] && prev_result=$(show_result "$prev_result_file") || prev_result=""
   task_id="${CURRENT_TASK_ID:-}"
 
   # awk substitution (ENVIRON avoids escaping issues with -v)
