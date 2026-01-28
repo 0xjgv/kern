@@ -35,7 +35,7 @@ PROJECT_ID=$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")
 BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
 OUTPUT_DIR="/tmp/claude/kern/$PROJECT_ID/$BRANCH"
 # Unified task list ID for Claude Code's native task persistence
-export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
+export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-${BRANCH//\//-}"
 # State derived from SPEC.md + stage files (no state file needed)
 LOCKDIR="/tmp/claude/kern/$PROJECT_ID-${BRANCH//\//-}.lock.d"
 PIDFILE="$LOCKDIR/pid"
@@ -152,8 +152,6 @@ has_queued_work() {
   find_task_by_status "pending" >/dev/null || find_task_by_status "in_progress" >/dev/null
 }
 
-# Check if task generation is needed (no pending tasks in queue)
-needs_generation() { ! find_task_by_status "pending" >/dev/null; }
 
 # Build prompt with context substitution (strips frontmatter)
 build_prompt() {
@@ -316,30 +314,13 @@ detect_resume_stage
 for i in $(seq 1 $MAX_ITER); do
   log "=== Iteration $i/$MAX_ITER ==="
 
-  # Exit early if no work in queue and generation says no tasks
-  if ! has_queued_work && ! needs_generation; then
-    log "All tasks complete"
-    exit 0
+  # === Stage 0: Sync Task Queue ===
+  log "Stage 0: Sync Task Queue"
+  if ! run_stage "generate" "$PROMPTS/0_generate.md" "$OUTPUT_DIR/stage0.json"; then
+    log "Stage 0 failed"
+    exit 1
   fi
-
-  # === Stage 0: Generate Task Queue ===
-  if needs_generation; then
-    log "Stage 0: Generate Task Queue"
-
-    if ! run_stage "generate" "$PROMPTS/0_generate.md" "$OUTPUT_DIR/stage0.json"; then
-      log "Stage 0 failed"
-      exit 1
-    fi
-    show_result "$OUTPUT_DIR/stage0.json"
-
-    # Check if tasks were generated
-    if jq -r '.result // ""' "$OUTPUT_DIR/stage0.json" | grep -q "NO_TASKS"; then
-      log "No tasks to generate"
-      exit 0
-    fi
-  else
-    debug "Stage 0: Skipped (tasks exist in queue)"
-  fi
+  show_result "$OUTPUT_DIR/stage0.json"
 
   # === Stage 1: Research ===
   if [[ $RESUME_FROM -gt 1 ]]; then
