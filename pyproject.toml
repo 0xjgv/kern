@@ -1,0 +1,59 @@
+[project]
+name = "kern"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "claude-agent-sdk>=0.1.25",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.14",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+preview = true  # enables RUF052, RUF059 for better dead code detection
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort (import sorting)
+    "UP",   # pyupgrade (modern Python syntax)
+    "B",    # flake8-bugbear (common bugs)
+    "SIM",  # flake8-simplify (simple > complex)
+    "RUF",  # ruff-specific rules
+    "C4",   # flake8-comprehensions
+    "PTH",  # flake8-use-pathlib
+    "ARG",  # unused arguments
+    "PL",   # pylint subset
+    "ERA",  # flake8-eradicate (commented-out code)
+    "PIE",  # flake8-pie (unnecessary placeholders)
+]
+ignore = [
+    "PLR0913",  # too-many-arguments (conflicts with keyword-only pattern)
+    "PLR0917",  # too-many-positional-arguments (same as above)
+    "PLR2004",  # magic-value-comparison (too noisy)
+    "PLR6201",  # use-set-literal (tuple is fine for small membership tests)
+    "PLR6301",  # method-could-be-function (design choice for class encapsulation)
+    "RUF029",   # async-without-await (hooks required by Claude SDK API)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ARG",      # unused arguments common in fixtures
+    "PLC0415",  # late imports fine in tests
+    "PLC1901",  # compare-to-empty-string (explicit checks ok in tests)
+    "PLC2701",  # private-name-import (testing internal behavior)
+    "PIE810",   # single-starts-ends-with (readability over optimization in tests)
+    "PLR2004",  # magic values fine in tests
+    "RUF029",   # async-without-await (mock iterators)
+    "SIM105",   # contextlib.suppress suggestion
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kern"]
