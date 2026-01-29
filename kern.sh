@@ -43,34 +43,44 @@ PIDFILE="$LOCKDIR/pid"
 # === Defaults ===
 VERBOSE=false
 DRY_RUN=false
-MAX_ITER=5
-DELAY=10
+TASK_ID=""
+HINT=""
+
+# === Exit Codes ===
+EXIT_SUCCESS=0
+EXIT_STAGE_FAILED=1
+EXIT_TASK_NOT_FOUND=2
+EXIT_LOCK_CONFLICT=3
 
 # === Usage ===
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [OPTIONS] [MAX_ITER] [DELAY]
+Usage: $(basename "$0") [OPTIONS] <task_id>
 
-Autonomous development pipeline - 3-stage task execution.
+Execute a single task through the 3-stage pipeline.
 
 Options:
-  -v, --verbose    Enable verbose logging
-  -n, --dry-run    Show what would be done without executing
-  -V, --version    Show version
-  --update         Update to latest version
-  -h, --help       Show this help message
+  --hint "..."   Guidance from CC (injected into prompts)
+  -v, --verbose  Enable verbose logging
+  -n, --dry-run  Show what would be done
+  -V, --version  Show version
+  --update       Update to latest version
+  -h, --help     Show this help message
 
 Arguments:
-  MAX_ITER         Maximum iterations (default: 5)
-  DELAY            Delay between iterations in seconds (default: 10)
+  task_id        ID of task to execute (required)
+
+Exit codes:
+  0 = SUCCESS (all stages completed, committed)
+  1 = STAGE_FAILED
+  2 = TASK_NOT_FOUND
+  3 = LOCK_CONFLICT
 
 Examples:
-  kern                 # Run 5 iterations
-  kern 10 30           # Run 10 iterations, 30s delay
-  kern -v 5            # Verbose mode, 5 iterations
-  kern -n              # Dry run to see what would happen
-  kern --version       # Show version
-  kern --update        # Update to latest version
+  kern 123               # Execute task 123
+  kern --hint "Try X" 5  # Execute task 5 with hint
+  kern -v 42             # Verbose mode, task 42
+  kern -n 7              # Dry run task 7
 EOF
   exit 0
 }
@@ -78,6 +88,10 @@ EOF
 # === Parse Arguments ===
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --hint)
+      HINT="$2"
+      shift 2
+      ;;
     -v|--verbose)
       VERBOSE=true
       shift
@@ -91,19 +105,20 @@ while [[ $# -gt 0 ]]; do
       ;;
     -*)
       echo "Unknown option: $1" >&2
-      usage
+      exit 1
       ;;
     *)
-      if [[ -z "${MAX_ITER_SET:-}" ]]; then
-        MAX_ITER="$1"
-        MAX_ITER_SET=true
-      else
-        DELAY="$1"
-      fi
+      TASK_ID="$1"
       shift
       ;;
   esac
 done
+
+# Validate task_id is provided
+if [[ -z "$TASK_ID" ]]; then
+  echo "Error: task_id required" >&2
+  usage
+fi
 
 # === Helpers ===
 cleanup() {
@@ -163,6 +178,84 @@ get_task_status() {
   [[ -f "$task_file" ]] && jq -r '.status // ""' "$task_file" 2>/dev/null
 }
 
+# Validate task exists before starting; prints task file path
+validate_task() {
+  local task_id="$1"
+  local task_file="$HOME/.claude/tasks/$CLAUDE_CODE_TASK_LIST_ID/$task_id.json"
+  if [[ ! -f "$task_file" ]]; then
+    log "ERROR: Task $task_id not found"
+    exit $EXIT_TASK_NOT_FOUND
+  fi
+  echo "$task_file"
+}
+
+# Write structured error JSON on failure
+write_error_json() {
+  local stage="$1" error="$2"
+  local output="$OUTPUT_DIR/error.json"
+  cat > "$output" <<EOF
+{
+  "stage": $stage,
+  "task_id": "$TASK_ID",
+  "error": "$error",
+  "details": "See stage${stage}.json and stage${stage}.log for details"
+}
+EOF
+}
+
+# Display task state with full metadata
+display_task() {
+  local task_file="$1"
+  [[ -f "$task_file" ]] || return 1
+
+  local status=$(jq -r '.status // "unknown"' "$task_file")
+  local indicator="○"
+  case "$status" in
+    pending)     indicator="○" ;;
+    in_progress) indicator="◐" ;;
+    completed)   indicator="●" ;;
+  esac
+
+  echo "┌─────────────────────────────────────────────────────────────"
+  jq -r --arg i "$indicator" \
+    '"│ \($i) Task #\(.id): \(.subject)\n│ Status: \(.status) | Active: \(.activeForm // "—")"' \
+    "$task_file" 2>/dev/null
+
+  # Show all metadata fields
+  local meta=$(jq -r '.metadata // {} | to_entries[] | "│   \(.key): \(.value | if type == "array" then join(", ") elif type == "object" then tostring else . end)"' "$task_file" 2>/dev/null)
+  [[ -n "$meta" ]] && echo "│ Metadata:" && echo "$meta"
+  echo "└─────────────────────────────────────────────────────────────"
+}
+
+# Start background watcher that displays task updates
+# Returns watcher PID via stdout
+start_task_watcher() {
+  local task_file="$1"
+  local interval="${2:-2}"  # Check every 2 seconds
+
+  (
+    local last_hash=""
+    while true; do
+      if [[ -f "$task_file" ]]; then
+        local hash=$(md5 -q "$task_file" 2>/dev/null || md5sum "$task_file" 2>/dev/null | cut -d' ' -f1)
+        if [[ "$hash" != "$last_hash" ]]; then
+          last_hash="$hash"
+          echo ""  # New line before update
+          display_task "$task_file"
+        fi
+      fi
+      sleep "$interval"
+    done
+  ) &
+  echo $!
+}
+
+# Stop watcher process
+stop_task_watcher() {
+  local pid="$1"
+  [[ -n "$pid" ]] && kill "$pid" 2>/dev/null
+  return 0
+}
 
 # Build prompt with context substitution (strips frontmatter)
 build_prompt() {
@@ -170,20 +263,63 @@ build_prompt() {
   local prev_result_file="${2:-}"
 
   # Gather context directly into variables
-  local commits learnings task diff prev_result task_id
+  local commits learnings task diff prev_result task_id hint
   commits=$(git log -5 --format="[%h] %s" --stat 2>&1 | head -80) || commits="No commits yet"
   learnings=$(cat "$LEARNINGS" 2>/dev/null) || learnings="No learnings yet."
   task=$(extract_task)
   diff=$(git diff --stat 2>&1 | head -50) || diff="No changes"
   [[ -n "$prev_result_file" && -f "$prev_result_file" ]] && prev_result=$(show_result "$prev_result_file") || prev_result=""
-  task_id="${CURRENT_TASK_ID:-}"
+  task_id="${CURRENT_TASK_ID:-$TASK_ID}"
+  hint="${HINT:-}"
+
+  # Extract structured fields from stage1.json if it exists (for stage 2)
+  local stage1_files="" stage1_pattern="" stage1_constraints="" stage1_plan=""
+  local stage1=$(stage_file 1)
+  if [[ -f "$stage1" ]]; then
+    stage1_files=$(jq -r '.research.files // [] | join(", ")' "$stage1" 2>/dev/null) || stage1_files=""
+    stage1_pattern=$(jq -r '.research.pattern // ""' "$stage1" 2>/dev/null) || stage1_pattern=""
+    stage1_constraints=$(jq -r '.research.constraints // [] | join(", ")' "$stage1" 2>/dev/null) || stage1_constraints=""
+    stage1_plan=$(jq -r '.plan // [] | to_entries | map("  \(.key + 1). \(.value)") | join("\n")' "$stage1" 2>/dev/null) || stage1_plan=""
+  fi
+
+  # Extract structured fields from stage2.json if it exists (for stage 3)
+  local stage2_files="" stage2_added="" stage2_removed="" stage2_validation=""
+  local stage2=$(stage_file 2)
+  if [[ -f "$stage2" ]]; then
+    stage2_files=$(jq -r '.files_changed // [] | join(", ")' "$stage2" 2>/dev/null) || stage2_files=""
+    stage2_added=$(jq -r '.lines_added // 0' "$stage2" 2>/dev/null) || stage2_added="0"
+    stage2_removed=$(jq -r '.lines_removed // 0' "$stage2" 2>/dev/null) || stage2_removed="0"
+    stage2_validation=$(jq -r '.validation // ""' "$stage2" 2>/dev/null) || stage2_validation=""
+  fi
 
   # awk substitution (ENVIRON avoids escaping issues with -v)
-  COMMITS="$commits" LEARNINGS="$learnings" TASK="$task" DIFF="$diff" PREV_RESULT="$prev_result" TASK_ID="$task_id" \
+  COMMITS="$commits" LEARNINGS="$learnings" TASK="$task" DIFF="$diff" \
+  PREV_RESULT="$prev_result" TASK_ID="$task_id" HINT="$hint" \
+  STAGE1_FILES="$stage1_files" STAGE1_PATTERN="$stage1_pattern" \
+  STAGE1_CONSTRAINTS="$stage1_constraints" STAGE1_PLAN="$stage1_plan" \
+  STAGE2_FILES="$stage2_files" STAGE2_ADDED="$stage2_added" \
+  STAGE2_REMOVED="$stage2_removed" STAGE2_VALIDATION="$stage2_validation" \
     awk '
       /^---$/ { if (++fm == 2) next }
       fm < 2 && fm > 0 { next }
-      { gsub(/\{COMMITS\}/, ENVIRON["COMMITS"]); gsub(/\{LEARNINGS\}/, ENVIRON["LEARNINGS"]); gsub(/\{TASK\}/, ENVIRON["TASK"]); gsub(/\{DIFF\}/, ENVIRON["DIFF"]); gsub(/\{PREV_RESULT\}/, ENVIRON["PREV_RESULT"]); gsub(/\{TASK_ID\}/, ENVIRON["TASK_ID"]); print }
+      {
+        gsub(/\{COMMITS\}/, ENVIRON["COMMITS"])
+        gsub(/\{LEARNINGS\}/, ENVIRON["LEARNINGS"])
+        gsub(/\{TASK\}/, ENVIRON["TASK"])
+        gsub(/\{DIFF\}/, ENVIRON["DIFF"])
+        gsub(/\{PREV_RESULT\}/, ENVIRON["PREV_RESULT"])
+        gsub(/\{TASK_ID\}/, ENVIRON["TASK_ID"])
+        gsub(/\{HINT\}/, ENVIRON["HINT"])
+        gsub(/\{STAGE1_FILES\}/, ENVIRON["STAGE1_FILES"])
+        gsub(/\{STAGE1_PATTERN\}/, ENVIRON["STAGE1_PATTERN"])
+        gsub(/\{STAGE1_CONSTRAINTS\}/, ENVIRON["STAGE1_CONSTRAINTS"])
+        gsub(/\{STAGE1_PLAN\}/, ENVIRON["STAGE1_PLAN"])
+        gsub(/\{STAGE2_FILES\}/, ENVIRON["STAGE2_FILES"])
+        gsub(/\{STAGE2_ADDED\}/, ENVIRON["STAGE2_ADDED"])
+        gsub(/\{STAGE2_REMOVED\}/, ENVIRON["STAGE2_REMOVED"])
+        gsub(/\{STAGE2_VALIDATION\}/, ENVIRON["STAGE2_VALIDATION"])
+        print
+      }
     ' "$template"
 }
 
@@ -276,20 +412,28 @@ execute_stage() {
   [[ -n "$prev_num" ]] && prev_output=$(stage_file "$prev_num")
 
   log "Stage $num: $label"
+
+  # Start task watcher if we have a task in progress
+  local watcher_pid=""
+  local task_file=$(find_task_by_status "in_progress" 2>/dev/null)
+  if [[ -n "$task_file" ]]; then
+    display_task "$task_file"
+    watcher_pid=$(start_task_watcher "$task_file")
+  fi
+
+  # Run the stage
+  local stage_result=0
   if ! run_stage "$name" "$PROMPTS/${num}_${name}.md" "$output" "$prev_output"; then
     log "Stage $num failed"
-    $exit_on_fail && exit 1
+    stage_result=1
   fi
-  show_result "$output"
-}
 
-# Detect where to resume based on task queue + stage files
-# Sets RESUME_FROM to: 1 (research), 2 (implement), or 3 (commit)
-detect_resume_stage() {
-  RESUME_FROM=1
-  find_task_by_status "in_progress" >/dev/null || return 0
-  check_stage_result 2 >/dev/null && RESUME_FROM=3 && return 0
-  check_stage_result 1 >/dev/null && RESUME_FROM=2
+  # Stop watcher and show final state
+  stop_task_watcher "$watcher_pid"
+  [[ -n "$task_file" && -f "$task_file" ]] && display_task "$task_file"
+
+  show_result "$output"
+  [[ $stage_result -eq 0 ]] || { $exit_on_fail && exit 1; return 1; }
 }
 
 # === Main ===
@@ -303,7 +447,7 @@ mkdir -p "$(dirname "$LOCKDIR")"
 # Prevent concurrent runs (mkdir is atomic)
 if ! mkdir "$LOCKDIR" 2>/dev/null; then
   log "Already running (PID: $(cat "$PIDFILE" 2>/dev/null || echo "unknown"))"
-  exit 1
+  exit $EXIT_LOCK_CONFLICT
 fi
 
 # Write our PID for stale lock detection
@@ -322,7 +466,7 @@ if [[ ! -f "$SPEC" ]]; then
   exit 1
 fi
 
-for prompt in 0_generate 1_research 2_implement 3_commit; do
+for prompt in 1_research 2_implement 3_commit; do
   if [[ ! -f "$PROMPTS/${prompt}.md" ]]; then
     log "ERROR: Missing prompt template: $PROMPTS/${prompt}.md"
     exit 1
@@ -330,104 +474,59 @@ for prompt in 0_generate 1_research 2_implement 3_commit; do
 done
 
 # Show configuration
-log "Configuration: max_iter=$MAX_ITER delay=${DELAY}s"
+log "Executing task: $TASK_ID"
 ! $VERBOSE || log "Verbose mode enabled"
 ! $DRY_RUN || log "Dry-run mode - no changes will be made"
 
-# Detect resume state from SPEC.md + stage files
-detect_resume_stage
-[[ $RESUME_FROM -gt 1 ]] && log "Resuming from stage: $RESUME_FROM"
+# Validate task exists
+task_file=$(validate_task "$TASK_ID")
+display_task "$task_file"
 
-for i in $(seq 1 $MAX_ITER); do
-  log "=== Iteration $i/$MAX_ITER ==="
+# Export for prompts
+export CURRENT_TASK_ID="$TASK_ID"
 
-  # === Stage 0: Sync Task Queue ===
-  execute_stage 0 "Sync Task Queue" "generate" "" true
+# === Stage 1: Research + Plan ===
+log "Stage 1: Research and Plan"
+if ! execute_stage 1 "Research" "research"; then
+  write_error_json 1 "Research stage failed"
+  exit $EXIT_STAGE_FAILED
+fi
 
-  # === Stage 1: Research ===
-  if [[ $RESUME_FROM -gt 1 ]]; then
-    log "Stage 1: Skipped (resuming)"
-  else
-    execute_stage 1 "Select and Research" "research" "" true
+# Validate stage 1 output
+if ! jq -e '.status == "SUCCESS"' "$(stage_file 1)" >/dev/null 2>&1; then
+  log "Stage 1 did not succeed"
+  exit $EXIT_STAGE_FAILED
+fi
 
-    # Validate JSON output
-    check_stage_result 1 >/dev/null || log "WARNING: Stage 1 output missing 'result' field"
+# === Stage 2: Implement ===
+log "Stage 2: Implement"
+if ! execute_stage 2 "Implement" "implement" 1; then
+  write_error_json 2 "Implementation stage failed"
+  exit $EXIT_STAGE_FAILED
+fi
 
-    # Verify a task was selected (check queue state, not result text)
-    if ! find_task_by_status "in_progress" >/dev/null; then
-      if ! find_task_by_status "pending" >/dev/null; then
-        log "No tasks available"
-        exit 0
-      fi
-      log "No task marked in-progress after Stage 1"
-      exit 1
-    fi
-  fi
+# Check if implementation succeeded
+if ! jq -e '.status == "SUCCESS"' "$(stage_file 2)" >/dev/null 2>&1; then
+  log "Stage 2 did not succeed"
+  exit $EXIT_STAGE_FAILED
+fi
 
-  # Capture task ID for this iteration (used in prompts and outcome detection)
-  CURRENT_TASK_ID=$(get_current_task_id) || CURRENT_TASK_ID=""
-  debug "Current task ID: $CURRENT_TASK_ID"
+# === Stage 3: Commit ===
+# Only run if there are changes to commit
+if git diff --quiet && git diff --cached --quiet; then
+  log "No changes to commit"
+  # Still success - task may have been a no-op
+  echo '{"status": "SUCCESS", "task_id": "'"$TASK_ID"'", "commit": null, "message": "No changes needed"}' > "$(stage_file 3)"
+  exit $EXIT_SUCCESS
+fi
 
-  # === Stage 2: Implement ===
-  if [[ $RESUME_FROM -gt 2 ]]; then
-    log "Stage 2: Skipped (resuming)"
-  else
-    execute_stage 2 "Plan and Implement" "implement" 1
-  fi
+log "Stage 3: Commit"
+if ! execute_stage 3 "Commit" "commit" 2; then
+  write_error_json 3 "Commit stage failed"
+  exit $EXIT_STAGE_FAILED
+fi
 
-  # Detect outcome via queue state (not text parsing)
-  task_status=""
-  [[ -n "$CURRENT_TASK_ID" ]] && task_status=$(get_task_status "$CURRENT_TASK_ID")
-
-  case "$task_status" in
-    completed)
-      log "Implementation succeeded"
-      ;;
-    pending)
-      log "Task skipped, continuing to next iteration"
-      [ $i -lt $MAX_ITER ] && sleep $DELAY
-      continue
-      ;;
-    in_progress)
-      # Could be decomposed (subtasks created) or failed
-      # Check for uncommitted changes to decide
-      if ! git diff --quiet || ! git diff --cached --quiet; then
-        log "Task in progress with changes"
-      else
-        log "Task decomposed or no changes, continuing"
-        [ $i -lt $MAX_ITER ] && sleep $DELAY
-        continue
-      fi
-      ;;
-    *)
-      log "Unknown task state (status: $task_status)"
-      log "Check $OUTPUT_DIR/stage2.json for details"
-      # Continue anyway to see if there are uncommitted changes worth committing
-      ;;
-  esac
-
-  # === Stage 3: Commit ===
-  # Only run if there are changes to commit
-  if git diff --quiet && git diff --cached --quiet; then
-    log "No changes to commit"
-    [ $i -lt $MAX_ITER ] && sleep $DELAY
-    continue
-  fi
-
-  execute_stage 3 "Review and Commit" "commit" 2
-
-  # Show commit result
-  commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-  log "Committed: $commit_hash"
-
-  # Clear resume state after first iteration completes
-  RESUME_FROM=1
-
-  # Clean up stage files for next iteration
-  rm -f "$OUTPUT_DIR"/stage*.json
-
-  [ $i -lt $MAX_ITER ] && sleep $DELAY
-done
-
-# Final summary
-log "Max iterations reached"
+# Show commit result
+commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+log "Task $TASK_ID completed successfully (commit: $commit_hash)"
+exit $EXIT_SUCCESS

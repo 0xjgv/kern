@@ -1,68 +1,72 @@
 ---
 model: opus
 ---
-# Stage 2: Plan and Implement
+# Stage 2: Implement
 
-Implement the current task based on research findings.
+Implement the task based on research findings.
 
 ## Context
 
-### Recent Commits
+### Task ID
+{TASK_ID}
 
+### Hint from CC
+{HINT}
+
+### Research Summary
+Files: {STAGE1_FILES}
+Pattern: {STAGE1_PATTERN}
+Constraints: {STAGE1_CONSTRAINTS}
+
+### Plan
+{STAGE1_PLAN}
+
+### Recent Commits
 {COMMITS}
 
 ### Learnings
-
 {LEARNINGS}
-
-### Current Task
-
-ID: {TASK_ID}
-
-{TASK}
-
-### Previous Stage Output
-
-{PREV_RESULT}
 
 ## Instructions
 
-### Get Task
+### 1. Fetch Task
+`TaskGet` with ID `{TASK_ID}` for full context.
 
-`TaskGet` with ID `{TASK_ID}` for full details including metadata.
-
-### Plan
-
-1. List changes needed (files, functions, lines)
-2. Order logically (dependencies first)
-3. If 6+ files: decompose with `TaskCreate` subtasks
-
-### Implement
-
-- Follow patterns from research metadata
+### 2. Implement
+Follow the plan from Stage 1:
+- Modify files in order specified
+- Follow the identified pattern
+- Respect constraints
 - Keep changes minimal and focused
-- Avoid over-engineering
 
-### Validate
+### 3. Validate
+Run `make check` or appropriate validation.
 
-Run `make check` or task-specific validation.
+### 4. Update Task
+On success: mark `completed`
+On failure: store attempt notes in metadata
 
-### Handle Results
+## Output Format
 
-**SUCCESS:**
+On success:
+```json
+{
+  "status": "SUCCESS",
+  "task_id": "{TASK_ID}",
+  "files_changed": ["file1.ext", "file2.ext"],
+  "lines_added": 25,
+  "lines_removed": 10,
+  "validation": "make check passed"
+}
+```
 
-1. `TaskUpdate` → mark `completed`
-2. Leave uncommitted (Stage 3 commits)
-
-**FAILURE:**
-
-1. `TaskUpdate` metadata with attempt notes
-2. **Tier 1** (attempts 1-2): Try different approach
-3. **Tier 2** (after 3 fails): `TaskCreate` subtasks, keep task `in_progress`
-4. **Tier 3**: `TaskUpdate` back to `pending` (skip this iteration)
-
-**Rules:** Never repeat failed approaches. Read attempt metadata first.
-
-## Output
-
-Summary of actions taken and final task state.
+On failure:
+```json
+{
+  "status": "FAILED",
+  "task_id": "{TASK_ID}",
+  "error": "What went wrong",
+  "attempted": "What was tried",
+  "suggestion": "What might work instead"
+}
+```

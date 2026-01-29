@@ -3,60 +3,65 @@ model: haiku
 ---
 # Stage 3: Review and Commit
 
-Review changes, commit, and sync task status.
+Review changes and commit.
 
 ## Context
 
-### Completed Task
-
-{TASK}
-
-### Changes Summary
-
-{DIFF}
+### Task ID
+{TASK_ID}
 
 ### Implementation Summary
+Files changed: {STAGE2_FILES}
+Lines: +{STAGE2_ADDED} -{STAGE2_REMOVED}
+Validation: {STAGE2_VALIDATION}
 
-{PREV_RESULT}
+### Changes
+{DIFF}
 
 ### Recent Commit Style
-
 {COMMITS}
 
 ## Instructions
 
-### Review
+### 1. Review
+- `git diff` to verify changes
+- Fix issues: debug prints, typos, sensitive files
 
-1. `git diff` and `git status`
-2. Verify changes match task
-3. Fix issues: debug prints, unresolved TODOs, typos, sensitive files
-
-### Commit
-
+### 2. Commit
 ```bash
 git add <specific files>
 git commit -m "$(cat <<'EOF'
-[AUTO] Task: <description>
+[AUTO] Task: <task subject>
 
-What changed:
-- <change 1>
-- <change 2>
-
-Validation:
-- make check passed
+<brief description of changes>
 EOF
 )"
 ```
 
-### Sync SPEC.md
+### 3. Sync SPEC.md
+Mark completed task `[x]` in SPEC.md.
 
-1. `TaskList` → find `completed` tasks
-2. Mark matching SPEC.md lines `[x]` (use subject or `spec_ref` metadata)
+### 4. Capture Learnings
+If non-obvious pattern discovered, note it.
 
-### Learnings (Optional)
+## Output Format
 
-If non-obvious pattern or gotcha discovered, append to `LEARNINGS.md`.
+On success:
+```json
+{
+  "status": "SUCCESS",
+  "task_id": "{TASK_ID}",
+  "commit": "<hash>",
+  "message": "<commit message>",
+  "learnings": ["pattern discovered", ...]
+}
+```
 
-## Output
-
-Commit hash on success. Fix and retry if pre-commit fails.
+On failure:
+```json
+{
+  "status": "FAILED",
+  "task_id": "{TASK_ID}",
+  "error": "What went wrong"
+}
+```

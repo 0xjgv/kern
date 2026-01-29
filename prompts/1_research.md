@@ -1,48 +1,72 @@
 ---
 model: opus
 ---
-# Stage 1: Select and Research
+# Stage 1: Research and Plan
 
-Select next task from queue and research the codebase.
+Research the codebase for the given task and create an implementation plan.
 
 ## Context
 
-### Recent Commits
+### Task ID
+{TASK_ID}
 
+### Hint from CC
+{HINT}
+
+### Recent Commits
 {COMMITS}
 
 ### Learnings
-
 {LEARNINGS}
 
 ## Instructions
 
-### Select Task
+### 1. Fetch Task
+`TaskGet` with ID `{TASK_ID}` for full details.
 
-1. `TaskList` to see queue
-2. Find first `pending` or `in_progress` task with empty `blockedBy`
-3. `TaskGet` for full details
-4. `TaskUpdate` to mark `in_progress`
-
-### Research
-
-If task lacks research metadata, explore the codebase using the following agents:
-
-- `codebase-locator`: Find relevant files (paths + lines)
+### 2. Research
+Use agents to explore the codebase:
+- `codebase-locator`: Find relevant files
 - `codebase-pattern-finder`: Identify patterns to follow
 - `codebase-analyzer`: Understand current vs desired state
-- `web-search-researcher`: External APIs if needed
 
-Focus on: files to modify, patterns to follow (check Learnings!), constraints/gotchas.
+Focus on: files to modify, patterns to follow, constraints.
 
-### Update Task
+### 3. Create Plan
+List concrete changes needed:
+1. Which files to modify
+2. What changes in each file
+3. Order of operations
 
-`TaskUpdate` with metadata: files, pattern, constraints, external docs.
+### 4. Update Task
+Store research findings in task metadata.
 
-### Sync SPEC.md
+## Output Format
 
-Mark task `[~]` with all the research notes for human visibility.
+You MUST output valid JSON in this exact structure:
 
-## Output
+```json
+{
+  "status": "SUCCESS",
+  "task_id": "{TASK_ID}",
+  "research": {
+    "files": ["path/to/file:lines", ...],
+    "pattern": "Description of pattern to follow",
+    "constraints": ["constraint 1", "constraint 2"]
+  },
+  "plan": [
+    "Step 1: ...",
+    "Step 2: ...",
+    "Step 3: ..."
+  ]
+}
+```
 
-Task marked `in_progress` with all the research notes. SPEC.md synced.
+If research fails, output:
+```json
+{
+  "status": "FAILED",
+  "task_id": "{TASK_ID}",
+  "error": "Description of what went wrong"
+}
+```
