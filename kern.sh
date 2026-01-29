@@ -422,12 +422,12 @@ execute_stage() {
 
   log "Stage $num: $label"
 
-  # Start task watcher if we have a task in progress
+  # Start task watcher if we have a task in progress (skip in dry-run)
   local watcher_pid=""
   local task_file=$(find_task_by_status "in_progress" 2>/dev/null)
   if [[ -n "$task_file" ]]; then
     display_task "$task_file"
-    watcher_pid=$(start_task_watcher "$task_file")
+    $DRY_RUN || watcher_pid=$(start_task_watcher "$task_file")
   fi
 
   # Run the stage
