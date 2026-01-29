@@ -13,10 +13,6 @@ Task ID: {TASK_ID}
 
 {DIFF}
 
-### Recent Commit Style
-
-{COMMITS}
-
 ## Instructions
 
 1. **Get Task**: `TaskGet` with ID `{TASK_ID}` for context

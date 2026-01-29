@@ -10,14 +10,6 @@ Research the codebase and create an implementation plan.
 Task ID: {TASK_ID}
 Hint: {HINT}
 
-### Recent Commits
-
-{COMMITS}
-
-### Learnings
-
-{LEARNINGS}
-
 ## Instructions
 
 1. **Get Task**: `TaskGet` with ID `{TASK_ID}`
