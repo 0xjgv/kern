@@ -1,10 +1,9 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/functions.sh"
 
 PROJECT_ID=$(git_project_id) BRANCH=$(git_branch_safe)
-OUTPUT_DIR="/tmp/claude/kern/$PROJECT_ID/$BRANCH"
 export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
 VERBOSE=false DRY_RUN=false HINT=""
 PROMPTS="$SCRIPT_DIR/prompts"
@@ -37,7 +36,6 @@ run_stage() {
   local num="$1" name="$2" default_model="${3:-opus}"
   local tpl=$(echo "$PROMPTS"/${num}_*.md)
   local model=$(awk '/^---$/{if(++c==2)exit} c==1&&/^model:/{print $NF}' "$tpl")
-  local logfile="$OUTPUT_DIR/stage${num}.log"
 
   log "Stage $num: $name"
 
@@ -46,13 +44,11 @@ run_stage() {
     return 0
   fi
 
-  # Trust Claude + exit code; --verbose for debugging
+  # Trust Claude exit code; check Task metadata for visibility
   build_prompt "$tpl" | cld --model "${model:-$default_model}" \
-    $($VERBOSE && echo "--verbose") \
-    -p "$(cat -)" 2>&1 | tee "$logfile"
+    $($VERBOSE && echo "--verbose") -p "$(cat -)"
 }
 
-mkdir -p "$OUTPUT_DIR"
 log "Executing task: $TASK_ID"
 run_stage 1 "Research & Planning" opus || die 1 "Research failed"
 run_stage 2 "Implement" opus || die 1 "Implement failed"
