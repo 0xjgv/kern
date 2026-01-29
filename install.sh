@@ -7,10 +7,7 @@ REPO="0xjgv/kern"
 
 # Colors (disabled if not a terminal)
 if [[ -t 1 ]]; then
-  RED='\033[0;31m'
-  GREEN='\033[0;32m'
-  YELLOW='\033[0;33m'
-  NC='\033[0m'
+  RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[0;33m' NC='\033[0m'
 else
   RED='' GREEN='' YELLOW='' NC=''
 fi
@@ -20,17 +17,8 @@ warn() { printf '%b\n' "${YELLOW}Warning:${NC} $1"; }
 error() { printf '%b\n' "${RED}Error:${NC} $1" >&2; exit 1; }
 
 # Dependency checks
-check_dep() {
-  local cmd="$1" install_hint="$2"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    error "Required: $cmd — $install_hint"
-  fi
-}
-
 info "Checking dependencies..."
-check_dep jq "brew install jq / apt install jq"
-check_dep git "brew install git / apt install git"
-check_dep curl "brew install curl / apt install curl"
+command -v git >/dev/null 2>&1 || error "Required: git"
 
 if ! command -v claude >/dev/null 2>&1; then
   warn "claude CLI not found. Install from: https://docs.anthropic.com/en/docs/claude-code"
@@ -51,11 +39,8 @@ if ! curl -fsSL "$DOWNLOAD_URL" | tar xz -C "$KERN_DIR" 2>/dev/null; then
 
   curl -fsSL "https://github.com/$REPO/archive/refs/heads/main.tar.gz" | tar xz -C "$TEMP_DIR"
 
-  # Copy files
   cp "$TEMP_DIR"/kern-main/kern.sh "$KERN_DIR/"
   cp -r "$TEMP_DIR"/kern-main/prompts "$KERN_DIR/"
-  [ -f "$TEMP_DIR"/kern-main/README.md ] && cp "$TEMP_DIR"/kern-main/README.md "$KERN_DIR/"
-  [ -f "$TEMP_DIR"/kern-main/agents.json ] && cp "$TEMP_DIR"/kern-main/agents.json "$KERN_DIR/"
 fi
 
 # Create symlink

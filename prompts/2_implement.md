@@ -1,68 +1,29 @@
 ---
 model: opus
 ---
-# Stage 2: Plan and Implement
+# Stage 2: Implement
 
-Implement the current task based on research findings.
+Implement the task based on research findings.
 
 ## Context
 
-### Recent Commits
-
-{COMMITS}
-
-### Learnings
-
-{LEARNINGS}
-
-### Current Task
-
-ID: {TASK_ID}
-
-{TASK}
-
-### Previous Stage Output
-
-{PREV_RESULT}
+Task ID: {TASK_ID}
+Hint: {HINT}
 
 ## Instructions
 
-### Get Task
+1. **Get Task**: `TaskGet` with ID `{TASK_ID}` — metadata contains research findings and plan
 
-`TaskGet` with ID `{TASK_ID}` for full details including metadata.
+2. **Implement**: Follow the plan from metadata:
+   - Keep changes minimal and focused
+   - Modify files in order specified
+   - Follow the identified pattern
+   - Respect constraints
 
-### Plan
+3. **Validate**: Run `make check` or appropriate validation
 
-1. List changes needed (files, functions, lines)
-2. Order logically (dependencies first)
-3. If 6+ files: decompose with `TaskCreate` subtasks
+4. **Store Implementation Details**: `TaskUpdate` with metadata:
+   - `metadata.implementation.files_changed`: Array of file paths that were changed
+   - `metadata.implementation.validation`: Validation result
 
-### Implement
-
-- Follow patterns from research metadata
-- Keep changes minimal and focused
-- Avoid over-engineering
-
-### Validate
-
-Run `make check` or task-specific validation.
-
-### Handle Results
-
-**SUCCESS:**
-
-1. `TaskUpdate` → mark `completed`
-2. Leave uncommitted (Stage 3 commits)
-
-**FAILURE:**
-
-1. `TaskUpdate` metadata with attempt notes
-2. **Tier 1** (attempts 1-2): Try different approach
-3. **Tier 2** (after 3 fails): `TaskCreate` subtasks, keep task `in_progress`
-4. **Tier 3**: `TaskUpdate` back to `pending` (skip this iteration)
-
-**Rules:** Never repeat failed approaches. Read attempt metadata first.
-
-## Output
-
-Summary of actions taken and final task state.
+5. **Output**: Print `SUCCESS` or `FAILED: <reason>`
