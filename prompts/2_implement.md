@@ -10,10 +10,6 @@ Implement the task based on research findings.
 Task ID: {TASK_ID}
 Hint: {HINT}
 
-### Recent Commits
-
-{RECENT_COMMITS}
-
 ## Instructions
 
 1. **Get Task**: `TaskGet` with ID `{TASK_ID}` — metadata contains research findings and plan

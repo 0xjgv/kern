@@ -10,9 +10,11 @@ Review changes and commit.
 Task ID: {TASK_ID}
 
 ### Recent Commits
+
 {RECENT_COMMITS}
 
 ### Changes
+
 {DIFF}
 
 ## Instructions
