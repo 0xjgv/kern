@@ -10,13 +10,18 @@ Implement the task based on research findings.
 Task ID: {TASK_ID}
 Hint: {HINT}
 
+### Recent Commits
+
+{RECENT_COMMITS}
+
 ## Instructions
 
 1. **Get Task**: `TaskGet` with ID `{TASK_ID}` — metadata contains research findings and plan
 
-2. **Implement**: Follow the plan from metadata:
+2. **Implement**: Follow the plan from metadata, creating tasks for each step:
+   - Create tasks for each step
+   - Modify files in order specified by the tasks
    - Keep changes minimal and focused
-   - Modify files in order specified
    - Follow the identified pattern
    - Respect constraints
 

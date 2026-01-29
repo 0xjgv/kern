@@ -1,6 +1,6 @@
 # kern
 
-Autonomous development pipeline — 3-stage task execution with context isolation and debuggability.
+Autonomous development pipeline — 4-stage task execution with context isolation.
 
 ## Installation
 
@@ -11,7 +11,6 @@ curl -fsSL https://raw.githubusercontent.com/0xjgv/kern/main/install.sh | sh
 ### Requirements
 
 - [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) — the AI that does the work
-- `jq` — JSON processing
 - `git` — version control
 
 ### Update
@@ -23,27 +22,24 @@ kern --update
 ## Architecture
 
 ```
-┌─────────────────────────────────┐     ┌─────────────────────────────────┐     ┌─────────────────────────────────┐
-│  STAGE 1: Research              │     │  STAGE 2: Implement             │     │  STAGE 3: Commit                │
-│  (read-only)                    │ ──▶ │  (full access)                  │ ──▶ │  (git-only)                     │
-│                                 │     │                                 │     │                                 │
-│  - Select task from SPEC.md    │     │  - Create plan from research    │     │  - Review changes               │
-│  - Research codebase            │     │  - Implement changes            │     │  - Check for issues             │
-│  - Document findings            │     │  - Run validation               │     │  - Create commit                │
-│  - Output: task + research      │     │  - Handle failures              │     │  - Update learnings             │
-└─────────────────────────────────┘     └─────────────────────────────────┘     └─────────────────────────────────┘
-        │                                       │                                       │
-        ▼                                       ▼                                       ▼
-   stage1.json                             stage2.json                             stage3.json
+┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│  STAGE 0         │     │  STAGE 1         │     │  STAGE 2         │     │  STAGE 3         │
+│  Populate Queue  │ ──▶ │  Research & Plan │ ──▶ │  Implement       │ ──▶ │  Review & Commit │
+│  (haiku)         │     │  (opus)          │     │  (opus)          │     │  (haiku)         │
+│                  │     │                  │     │                  │     │                  │
+│  - Parse SPEC.md │     │  - Select task   │     │  - Follow plan   │     │  - Review diff   │
+│  - Create tasks  │     │  - Research code │     │  - Make changes  │     │  - Create commit │
+│  - Idempotent    │     │  - Store plan    │     │  - Validate      │     │  - Mark complete │
+└──────────────────┘     └──────────────────┘     └──────────────────┘     └──────────────────┘
 ```
 
-## Why 3 Stages?
+## Why Stages?
 
 1. **Context isolation**: Each stage starts fresh, avoiding 100K+ token sessions
-2. **Debuggability**: Stage outputs in `/tmp/claude/kern/...` are inspectable
-3. **Read-only exploration**: Stage 1 can't accidentally break things
-4. **Restricted commit**: Stage 3 can only run git commands
-5. **Natural coupling**: Research+Plan and Implement+Validate are tightly coupled
+2. **Model selection**: Cheap models (haiku) for simple work, powerful models (opus) for complex work
+3. **Read-only exploration**: Stage 1 researches without modifying files
+4. **Restricted commit**: Stage 3 only reviews and commits
+5. **Task queue**: Stage 0 syncs SPEC.md → TaskList for structured tracking
 
 ## Project Setup
 
@@ -51,8 +47,7 @@ In your project, create:
 
 ```
 ./
-├── SPEC.md              # Task list + research notes + attempt history
-└── LEARNINGS.md         # Accumulated insights (grows over time)
+└── SPEC.md              # Task list with checkbox state ([ ], [~], [x])
 ```
 
 kern installs to `~/.local/share/kern/` with its prompts bundled.
@@ -63,142 +58,95 @@ kern installs to `~/.local/share/kern/` with its prompts bundled.
 # Show help
 kern --help
 
-# Run 5 iterations (default)
+# Run up to 5 tasks (default)
 kern
 
-# Run 10 iterations with 30s delay
-kern 10 30
+# Run up to 10 tasks
+kern -c 10
+
+# Run specific task by ID
+kern 7
+
+# Run with hint for guidance
+kern --hint "focus on error handling"
 
 # Verbose mode (shows debug info)
-kern -v 5
+kern -v
 
-# Dry run (see what would happen without executing)
+# Dry run (see what would happen)
 kern -n
-
-# Check stage outputs (project/branch scoped)
-jq '.result' /tmp/claude/kern/$PROJECT/$BRANCH/stage*.json
 ```
 
 ## Features
 
-### Retry Logic
-
-Transient failures (API errors, network issues) retry up to 3 times with exponential backoff.
-
-### Stale Lock Detection
-
-If a previous run was killed, the lock file is automatically cleaned up based on PID.
-
-### SPEC.md Validation
-
-After each stage, SPEC.md is validated for:
-
-- Malformed task markers
-- Multiple in-progress tasks (should only be one)
-
-### Resume Logic
-
-Pipeline state is inferred from SPEC.md + stage files (no state file needed):
-
-- If an in-progress task exists (`[~]`) and stage files are present, resumes from the appropriate stage
-- Stage files are cleaned up after each successful iteration
-
 ### Project/Branch Isolation
 
-Output directory is scoped by project and branch: `/tmp/claude/kern/$PROJECT_ID/$BRANCH`
+Task list is scoped by project and branch via `CLAUDE_CODE_TASK_LIST_ID`:
 
-- Prevents collisions between repos and git worktrees
-- Lock files are also scoped: `/tmp/claude/kern/$PROJECT_ID-$BRANCH.lock.d`
+```
+kern-$PROJECT_ID-$BRANCH
+```
+
+Prevents collisions between repos and git worktrees.
 
 ## Context Injection
 
-Each stage receives pre-built context (no tool calls needed to find it):
+Each stage receives context via template placeholders:
 
-| Context | Stage 1 | Stage 2 | Stage 3 |
-|---------|---------|---------|---------|
-| LEARNINGS.md | ✓ | ✓ | - |
-| Recent commits | ✓ | ✓ | ✓ (for style) |
-| Current task + research | - | ✓ | ✓ (task only) |
-| Git diff | - | - | ✓ |
+| Context | Stage 0 | Stage 1 | Stage 2 | Stage 3 |
+|---------|---------|---------|---------|---------|
+| SPEC_FILE | ✓ | - | - | - |
+| TASK_ID | - | ✓ | ✓ | ✓ |
+| HINT | - | ✓ | ✓ | - |
+| RECENT_COMMITS | - | ✓ | ✓ | ✓ |
+| DIFF | - | - | - | ✓ |
+
+Task metadata (research findings, plan) is accessed via `TaskGet`.
 
 ## Tool Restrictions
 
-Tool restrictions are enforced via stage prompts (not script-level enforcement):
+Tool restrictions are enforced via stage prompts (not script-level):
 
 | Stage | Allowed Tools |
 |-------|--------------|
-| Research | Read, Glob, Grep, Task, WebSearch, WebFetch |
-| Implement | All (full access) |
-| Commit | Read, Glob, Grep, git add, git commit, git status, git diff |
+| 0: Populate | TaskList, TaskCreate, Read |
+| 1: Research | Read, Glob, Grep, Task, TaskGet, TaskUpdate |
+| 2: Implement | All (full access) |
+| 3: Commit | Read, Glob, Grep, TaskUpdate, git commands |
 
-## Task State in SPEC.md
+## Task State
 
+Tasks are tracked in two places:
+
+**SPEC.md** — Human-readable task list with checkbox state:
 ```markdown
 - [ ] Pending task
 - [~] In-progress task
-  > **Research:**
-  >   - Files: path:lines
-  >   - Pattern: what to follow
-  >   - Constraint: blockers
-  > **Attempt 1:** what failed
-  > **Attempt 2:** different approach that also failed
 - [x] Completed task
-  > **Research:** (preserved for reference)
 ```
 
-## Failure Handling
-
-**Tier 1 - Different approach** (attempts 1-2):
-
-- Stage 2 reads attempt notes and tries alternative
-
-**Tier 2 - Decompose** (after 3 attempts):
-
-- Stage 2 breaks task into subtasks
-- Next iteration works on subtasks individually
-
-**Tier 3 - Skip** (if subtasks fail):
-
-- Task reverts to `[ ]` with notes preserved
-- Pipeline moves to next task
-- Will return to skipped task in future iteration
+**TaskList** — Claude's task queue with metadata:
+- `metadata.spec_line`: Line number in SPEC.md
+- `metadata.research`: Files, patterns, constraints from Stage 1
+- `metadata.plan`: Implementation steps from Stage 1
+- `metadata.implementation`: Changed files, validation from Stage 2
 
 ## Output Codes
 
-Stage 2 outputs one of:
+Each stage outputs one of:
 
-- `SUCCESS` - Task completed, ready for Stage 3
-- `DECOMPOSED` - Task broken into subtasks, skip to next iteration
-- `SKIPPED` - Task blocked, moved to next task
-- `FAILED` - Exhausted approaches, needs manual help
+- `SUCCESS` — Stage completed successfully
+- `FAILED: <reason>` — Stage failed with explanation
 
 ## Debugging
 
-1. Check stage outputs:
+Check SPEC.md for task state:
 
-   ```bash
-   jq '.result' /tmp/claude/kern/$PROJECT/$BRANCH/stage*.json
-   ```
+```bash
+grep '\[\(~\| \|x\)\]' SPEC.md
+```
 
-2. View full transcript:
-
-   ```bash
-   jq '.' /tmp/claude/kern/$PROJECT/$BRANCH/stage2.json | less
-   ```
-
-3. Check SPEC.md for attempt notes:
-
-   ```bash
-   grep -A 10 '\[~\]' SPEC.md
-   ```
-
-## Context Budget
-
-| Stage | Injected | Typical Total | Notes |
-|-------|----------|---------------|-------|
-| Research | ~2K | 30-50K | Explores broadly, outputs compressed |
-| Implement | ~3K | 50-100K | Bulk of work, focused by task |
-| Commit | ~1K | 10-20K | Minimal, just review and commit |
+Task metadata is stored in Claude's TaskList (view via `TaskList` tool in a Claude session).
 
 ## Releasing
 
@@ -250,7 +198,7 @@ jobs:
       - name: Run kern
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: kern ${{ inputs.iterations }}
+        run: kern -c ${{ inputs.iterations }}
 
       - name: Push changes
         run: |
