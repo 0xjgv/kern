@@ -1,4 +1,6 @@
 {
+  "alwaysThinkingEnabled": true,
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
       "WebFetch(domain:api.anthropic.com)",
