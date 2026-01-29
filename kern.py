@@ -182,24 +182,14 @@ def git_recent_commits(count: int = 5, max_chars: int = 2000) -> str:
 
 
 def has_changes() -> bool:
-    """Check if there are uncommitted changes."""
-    staged = (
-        subprocess.run(
-            ["git", "diff", "--cached", "--quiet"],
-            capture_output=True,
-            check=False,
-        ).returncode
-        != 0
-    )
-    unstaged = (
-        subprocess.run(
-            ["git", "diff", "--quiet"],
-            capture_output=True,
-            check=False,
-        ).returncode
-        != 0
-    )
-    return staged or unstaged
+    """Check if there are uncommitted changes (staged or unstaged)."""
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"], capture_output=True, check=False
+    ).returncode
+    unstaged = subprocess.run(
+        ["git", "diff", "--quiet"], capture_output=True, check=False
+    ).returncode
+    return staged != 0 or unstaged != 0
 
 
 # === Prompt Templates ===
@@ -412,28 +402,25 @@ async def run_stage(
     options = get_stage_options(stage_num, model)
 
     success = False
-    extracted_task_id = None
+    task_id = None
 
     try:
         async for message in query(prompt=prompt, options=options):
             if not isinstance(message, AssistantMessage):
                 continue
 
-            texts = _extract_text_blocks(message)
-            if verbose:
-                for text in texts:
+            for text in _extract_text_blocks(message):
+                if verbose:
                     print(text)
-
-            for text in texts:
                 if "FAILED:" in text:
                     print(f"Stage {stage_num} failed: {text}")
                     return False, None
                 if "SUCCESS" in text:
                     success = True
                     if stage_num == 1:
-                        extracted_task_id = _extract_task_id(text)
+                        task_id = _extract_task_id(text)
 
-        return success, extracted_task_id
+        return success, task_id
     except Exception as e:
         print(f"Stage {stage_num} error: {e}")
         return False, None
@@ -556,27 +543,25 @@ async def run_pipeline(
         return False
 
     # Process tasks from queue
-    task_count = 0
-    while task_count < max_tasks:
-        success, completed_task_id = await run_task(
-            task_id=None, hint=hint, verbose=verbose
-        )
+    completed = 0
+    for _ in range(max_tasks):
+        success, task_id = await run_task(task_id=None, hint=hint, verbose=verbose)
 
         if not success:
-            if completed_task_id:
-                print(f"Task {completed_task_id} failed")
+            if task_id:
+                print(f"Task {task_id} failed")
                 return False
             break  # No more tasks
 
-        if completed_task_id is None:
-            break  # No more tasks in queue
+        if task_id is None:
+            break  # Queue empty
 
-        task_count += 1
+        completed += 1
 
-    if task_count == 0:
+    if completed == 0:
         print("No pending tasks in queue")
     else:
-        print(f"Completed {task_count} task(s)")
+        print(f"Completed {completed} task(s)")
 
     return True
 

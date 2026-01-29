@@ -4,20 +4,26 @@ Autonomous development pipeline — 4-stage task execution with context isolatio
 
 ## Installation
 
+### From Source (Development)
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/0xjgv/kern/main/install.sh | sh
+git clone https://github.com/0xjgv/kern.git
+cd kern
+pip install -e .
+```
+
+### From PyPI (Coming Soon)
+
+```bash
+pip install kern
 ```
 
 ### Requirements
 
+- Python >=3.13
 - [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) — the AI that does the work
+- [claude-agent-sdk](https://pypi.org/project/claude-agent-sdk/) — Python SDK for Claude agents
 - `git` — version control
-
-### Update
-
-```bash
-kern --update
-```
 
 ## Architecture
 
@@ -50,7 +56,7 @@ In your project, create:
 └── SPEC.md              # Task list with checkbox state ([ ], [~], [x])
 ```
 
-kern installs to `~/.local/share/kern/` with its prompts bundled.
+kern is a Python package with prompts embedded in `kern.py`.
 
 ## Usage
 
@@ -69,6 +75,7 @@ kern 7
 
 # Run with hint for guidance
 kern --hint "focus on error handling"
+kern -H "focus on error handling"
 
 # Verbose mode (shows debug info)
 kern -v
@@ -76,6 +83,11 @@ kern -v
 # Dry run (see what would happen)
 kern -n
 ```
+
+### Modes
+
+- **Iteration mode** (default): Runs Stage 0 to populate queue from SPEC.md, then iterates Stages 1-3 for each task
+- **Single task mode**: `kern <task_id>` skips Stage 0 and runs Stages 1-3 for the specified task
 
 ## Features
 
@@ -105,14 +117,16 @@ Task metadata (research findings, plan) is accessed via `TaskGet`.
 
 ## Tool Restrictions
 
-Tool restrictions are enforced via stage prompts (not script-level):
+Tool restrictions are enforced programmatically via `allowed_tools` in `ClaudeAgentOptions`:
 
 | Stage | Allowed Tools |
 |-------|--------------|
-| 0: Populate | TaskList, TaskCreate, Read |
-| 1: Research | Read, Glob, Grep, Task, TaskGet, TaskUpdate |
-| 2: Implement | All (full access) |
-| 3: Commit | Read, Glob, Grep, TaskUpdate, git commands |
+| 0: Populate | Read, Glob, Grep, LS, TaskGet, TaskUpdate, TaskList, TaskCreate |
+| 1: Research | Base tools + Task (agents), WebSearch, WebFetch |
+| 2: Implement | Base tools + Write, Edit, Bash, Task |
+| 3: Commit | Base tools + Bash (git), Edit (SPEC.md) |
+
+Base tools: Read, Glob, Grep, LS, TaskGet, TaskUpdate, TaskList, TaskCreate
 
 ## Task State
 
@@ -150,24 +164,40 @@ grep '\[\(~\| \|x\)\]' SPEC.md
 
 Task metadata is stored in Claude's TaskList (view via `TaskList` tool in a Claude session).
 
-## Releasing
+## Security
 
-To cut a new release:
+kern includes several security measures:
+
+### Hint Validation
+
+User-provided hints are validated to prevent prompt injection:
+
+- Maximum length: 500 characters
+- Blocks patterns like "ignore previous instructions", "disregard above", etc.
+
+### Untrusted Data Wrapping
+
+External data (hints, git diffs, commit logs) is wrapped in `<data source="...">` tags to distinguish trusted prompts from untrusted content.
+
+### Least-Privilege Tool Access
+
+Each stage only has access to the tools it needs (see Tool Restrictions).
+
+## Development
 
 ```bash
-./scripts/release.sh 0.1.5
+# Install in development mode
+pip install -e .
+
+# Run linting
+make lint
+
+# Run tests
+make test
+
+# Run all checks
+make check
 ```
-
-Or manually: **Actions → Release → Run workflow** → enter version
-
-The workflow:
-
-1. Validates version format and checks tag doesn't exist
-2. Injects version into `kern.sh`
-3. Creates tarball with `kern.sh`, `prompts/`, `README.md`
-4. Creates git tag and GitHub Release with auto-generated notes
-
-No local tags needed — the workflow handles everything.
 
 ## CI/CD
 
@@ -189,13 +219,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y python3.13 python3.13-venv
-          npm install -g @anthropic-ai/claude-code
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
       - name: Install kern
-        run: curl -fsSL https://raw.githubusercontent.com/0xjgv/kern/main/install.sh | sh
+        run: pip install git+https://github.com/0xjgv/kern.git
 
       - name: Run kern
         env:
@@ -212,4 +242,4 @@ jobs:
 **Notes:**
 
 - Uses `workflow_dispatch` for manual triggers — adjust trigger as needed
-- Requires Claude Code CLI
+- Requires `ANTHROPIC_API_KEY` secret configured in your repository
