@@ -21,7 +21,7 @@ kern --update
 
 ## Architecture
 
-```
+```m
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
 │  STAGE 0         │     │  STAGE 1         │     │  STAGE 2         │     │  STAGE 3         │
 │  Populate Queue  │ ──▶ │  Research & Plan │ ──▶ │  Implement       │ ──▶ │  Review & Commit │
@@ -45,7 +45,7 @@ kern --update
 
 In your project, create:
 
-```
+```m
 ./
 └── SPEC.md              # Task list with checkbox state ([ ], [~], [x])
 ```
@@ -83,7 +83,7 @@ kern -n
 
 Task list is scoped by project and branch via `CLAUDE_CODE_TASK_LIST_ID`:
 
-```
+```m
 kern-$PROJECT_ID-$BRANCH
 ```
 
@@ -119,6 +119,7 @@ Tool restrictions are enforced via stage prompts (not script-level):
 Tasks are tracked in two places:
 
 **SPEC.md** — Human-readable task list with checkbox state:
+
 ```markdown
 - [ ] Pending task
 - [~] In-progress task
@@ -126,6 +127,7 @@ Tasks are tracked in two places:
 ```
 
 **TaskList** — Claude's task queue with metadata:
+
 - `metadata.spec_line`: Line number in SPEC.md
 - `metadata.research`: Files, patterns, constraints from Stage 1
 - `metadata.plan`: Implementation steps from Stage 1
@@ -189,7 +191,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
+          sudo apt-get update && sudo apt-get install -y python3.13 python3.13-venv
           npm install -g @anthropic-ai/claude-code
 
       - name: Install kern

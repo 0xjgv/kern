@@ -4,27 +4,31 @@ Autonomous 3-stage development pipeline using Claude CLI for task execution with
 
 ## Stack
 
-- jq, git, awk
-- Claude CLI
-- Bash
+- Python >=3.13, claude-agent-sdk
+- Bash, git, awk
 
 ## Structure
 
-- `kern.sh` — Pipeline orchestrator
-- `prompts/` — Stage templates (1_research, 2_implement, 3_commit)
+- `kern.py` — Python pipeline module (entry: `kern`)
+- `kern.sh` — Bash pipeline orchestrator
+- `prompts/` — Stage templates (0_populate_queue → 3_review_commit)
 - `SPEC.md` — Task list with checkbox state (`[ ]`, `[~]`, `[x]`)
 - `LEARNINGS.md` — Accumulated project insights
 
 ## Commands
 
-- Run: `./kern.sh`
-- Run N iterations: `./kern.sh N [delay]`
-- Verbose: `./kern.sh -v`
-- Dry run: `./kern.sh -n`
-- Debug: `jq '.result' /tmp/claude/kern/$PROJECT/$BRANCH/stage*.json`
+- Install: `make install`
+- Lint: `make lint`
+- Test: `make test`
+- All checks: `make check`
+- Run bash: `./kern.sh` or `./kern.sh N [delay]`
+
+## Docs
+
+- `docs/` — Incident reports and operational docs
+- `thoughts/shared/` — Research and implementation plans
 
 ## Patterns
 
-- Tasks use markdown checkboxes: `[ ]` pending, `[~]` in-progress, `[x]` complete
+- Tasks use markdown checkboxes in SPEC.md
 - Stage outputs to `/tmp/claude/kern/$PROJECT_ID/$BRANCH/`
-- Retry with exponential backoff on transient failures
