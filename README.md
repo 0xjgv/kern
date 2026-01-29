@@ -56,7 +56,7 @@ In your project, create:
 └── SPEC.md              # Task list with checkbox state ([ ], [~], [x])
 ```
 
-kern is a Python package with prompts embedded in `kern.py`.
+kern is a Python package with stage prompts in `prompts/` directory.
 
 ## Usage
 
@@ -192,10 +192,7 @@ pip install -e .
 # Run linting
 make lint
 
-# Run tests
-make test
-
-# Run all checks
+# Run all checks (lint + format)
 make check
 ```
 

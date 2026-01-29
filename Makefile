@@ -57,7 +57,7 @@ test: ## Run tests with pytest
 
 .PHONY: test-cov
 test-cov: ## Run tests with coverage (fails if <80%)
-	@$(SILENT_HELPER) && run_silent "Running tests with coverage" "uv run pytest tests/ -v --cov=π --cov-report=term-missing --cov-fail-under=80"
+	@$(SILENT_HELPER) && run_silent "Running tests with coverage" "uv run pytest tests/ -v --cov=kern --cov-report=term-missing --cov-fail-under=80"
 
 .PHONY: test-no-api
 test-no-api: ## Run tests without API access
@@ -88,7 +88,7 @@ mutate-clean: ## Clear mutation testing cache
 ##@ Development
 
 .PHONY: check
-check: quality-check test ## Run all checks
+check: quality-check ## Run all checks (lint + format)
 
 .PHONY: codespace
 codespace: ## Set up codespace environment
@@ -104,14 +104,14 @@ codespace: ## Set up codespace environment
 ##@ Distribution
 
 .PHONY: link
-link: install ## Install and add π to PATH via symlink
+link: install ## Install and add kern to PATH via symlink
 	@mkdir -p ~/.local/bin
-	@ln -sf "$(CURDIR)/.venv/bin/π" ~/.local/bin/π
-	@echo "✓ Linked π to ~/.local/bin/π"
+	@ln -sf "$(CURDIR)/.venv/bin/kern" ~/.local/bin/kern
+	@echo "Linked kern to ~/.local/bin/kern"
 	@echo "  Ensure ~/.local/bin is in your PATH:"
 	@echo "  export PATH=\"\$$HOME/.local/bin:\$$PATH\""
 
 .PHONY: unlink
-unlink: ## Remove π symlink
-	@rm -f ~/.local/bin/π
-	@echo "✓ Removed π from ~/.local/bin"
+unlink: ## Remove kern symlink
+	@rm -f ~/.local/bin/kern
+	@echo "Removed kern from ~/.local/bin"
