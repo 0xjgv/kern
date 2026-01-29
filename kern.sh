@@ -88,6 +88,7 @@ run_stage() {
     TASK_ID="${BASH_REMATCH[1]}"
     export TASK_ID
     debug "Stage 1 selected task: $TASK_ID"
+    echo "$output"
   fi
 
   # Check for SUCCESS in output
