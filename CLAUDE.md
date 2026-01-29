@@ -1,6 +1,6 @@
 # kern
 
-Autonomous 3-stage development pipeline using Claude CLI for task execution with context isolation.
+Autonomous 4-stage development pipeline using Claude CLI for task execution with context isolation.
 
 ## Stack
 

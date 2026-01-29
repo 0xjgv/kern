@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""kern - Autonomous 3-stage development pipeline using claude-agent-sdk."""
+"""kern - Autonomous 4-stage development pipeline using claude-agent-sdk."""
 
 import argparse
 import asyncio
