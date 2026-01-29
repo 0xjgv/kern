@@ -18,7 +18,8 @@ from claude_agent_sdk import (
 
 # === Security: Tool Lists for Least-Privilege Stages ===
 
-READ_ONLY_TOOLS = [
+# Base tools for read-only operations
+_BASE_TOOLS = [
     "Read",
     "Glob",
     "Grep",
@@ -29,19 +30,31 @@ READ_ONLY_TOOLS = [
     "TaskCreate",
 ]
 
-READ_WRITE_TOOLS = [
-    "Read",
+# Stage 0: Populate queue (read SPEC.md, create tasks)
+STAGE_0_TOOLS = _BASE_TOOLS
+
+# Stage 1: Research (base + agents + web search)
+STAGE_1_TOOLS = [
+    *_BASE_TOOLS,
+    "Task",  # For agents (codebase-analyzer, web-search-researcher, etc.)
+    "WebSearch",
+    "WebFetch",
+]
+
+# Stage 2: Implement (full write access)
+STAGE_2_TOOLS = [
+    *_BASE_TOOLS,
     "Write",
     "Edit",
-    "Glob",
-    "Grep",
-    "LS",
     "Bash",
-    "TaskGet",
-    "TaskUpdate",
-    "TaskList",
-    "TaskCreate",
     "Task",
+]
+
+# Stage 3: Commit (base + git commands + SPEC.md edit)
+STAGE_3_TOOLS = [
+    *_BASE_TOOLS,
+    "Bash",  # For git add/commit
+    "Edit",  # For marking SPEC.md [x]
 ]
 
 # === Security: Injection Detection ===
@@ -88,8 +101,10 @@ def wrap_untrusted(source: str, content: str) -> str:
 def get_stage_options(stage_num: int, model: str = "opus") -> ClaudeAgentOptions:
     """Return appropriate options for each stage.
 
-    - Stages 0, 1, 3: Read-only (research, planning, commit review)
-    - Stage 2: Read-write (implementation)
+    - Stage 0: Read-only (populate queue)
+    - Stage 1: Research (read + agents + web search)
+    - Stage 2: Implement (full write access)
+    - Stage 3: Commit (read + git + edit SPEC.md)
 
     Args:
         stage_num: Stage number (0-3).
@@ -98,17 +113,16 @@ def get_stage_options(stage_num: int, model: str = "opus") -> ClaudeAgentOptions
     Returns:
         ClaudeAgentOptions configured for the stage.
     """
-    if stage_num == 2:
-        # Implementation stage needs write access
-        return ClaudeAgentOptions(
-            model=model,
-            allowed_tools=READ_WRITE_TOOLS,
-            permission_mode="bypassPermissions",
-        )
-    # Research/commit stages are read-only
+    tools = {
+        0: STAGE_0_TOOLS,
+        1: STAGE_1_TOOLS,
+        2: STAGE_2_TOOLS,
+        3: STAGE_3_TOOLS,
+    }.get(stage_num, STAGE_0_TOOLS)
+
     return ClaudeAgentOptions(
         model=model,
-        allowed_tools=READ_ONLY_TOOLS,
+        allowed_tools=tools,
         permission_mode="bypassPermissions",
     )
 
@@ -345,16 +359,16 @@ def build_prompt(
     Returns:
         Formatted prompt with wrapped untrusted data.
     """
-    diff = wrap_untrusted("git-diff", git_diff_stat())
-    commits = wrap_untrusted("git-log", git_recent_commits())
     wrapped_hint = wrap_untrusted("hint", hint) if hint else ""
+    commits = wrap_untrusted("git-log", git_recent_commits())
+    diff = wrap_untrusted("git-diff", git_diff_stat())
 
     return template.format(
-        task_id=task_id,
-        hint=wrapped_hint,
-        diff=diff,
         recent_commits=commits,
         spec_file=spec_file,
+        hint=wrapped_hint,
+        task_id=task_id,
+        diff=diff,
     )
 
 

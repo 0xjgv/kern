@@ -1,7 +1,7 @@
 [project]
 name = "kern"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.2.0"
+description = "Autonomous 4-stage development pipeline using Claude"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -10,6 +10,17 @@ dependencies = [
 
 [project.scripts]
 kern = "kern:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+only-includes = ["kern.py"]
+
+[tool.hatch.build.targets.sdist]
+only-includes = ["kern.py", "prompts/", "pyproject.toml", "README.md"]
 
 [dependency-groups]
 dev = [
