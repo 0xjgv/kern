@@ -7,66 +7,31 @@ Implement the task based on research findings.
 
 ## Context
 
-### Task ID
-{TASK_ID}
-
-### Hint from CC
-{HINT}
-
-### Research Summary
-Files: {STAGE1_FILES}
-Pattern: {STAGE1_PATTERN}
-Constraints: {STAGE1_CONSTRAINTS}
-
-### Plan
-{STAGE1_PLAN}
+Task ID: {TASK_ID}
+Hint: {HINT}
 
 ### Recent Commits
+
 {COMMITS}
 
 ### Learnings
+
 {LEARNINGS}
 
 ## Instructions
 
-### 1. Fetch Task
-`TaskGet` with ID `{TASK_ID}` for full context.
+1. **Get Task**: `TaskGet` with ID `{TASK_ID}` — metadata contains research findings and plan
 
-### 2. Implement
-Follow the plan from Stage 1:
-- Modify files in order specified
-- Follow the identified pattern
-- Respect constraints
-- Keep changes minimal and focused
+2. **Implement**: Follow the plan from metadata:
+   - Keep changes minimal and focused
+   - Modify files in order specified
+   - Follow the identified pattern
+   - Respect constraints
 
-### 3. Validate
-Run `make check` or appropriate validation.
+3. **Validate**: Run `make check` or appropriate validation
 
-### 4. Update Task
-On success: mark `completed`
-On failure: store attempt notes in metadata
+4. **Store Implementation Details**: `TaskUpdate` with metadata:
+   - `metadata.implementation.files_changed`: Array of file paths that were changed
+   - `metadata.implementation.validation`: Validation result
 
-## Output Format
-
-On success:
-```json
-{
-  "status": "SUCCESS",
-  "task_id": "{TASK_ID}",
-  "files_changed": ["file1.ext", "file2.ext"],
-  "lines_added": 25,
-  "lines_removed": 10,
-  "validation": "make check passed"
-}
-```
-
-On failure:
-```json
-{
-  "status": "FAILED",
-  "task_id": "{TASK_ID}",
-  "error": "What went wrong",
-  "attempted": "What was tried",
-  "suggestion": "What might work instead"
-}
-```
+5. **Output**: Print `SUCCESS` or `FAILED: <reason>`

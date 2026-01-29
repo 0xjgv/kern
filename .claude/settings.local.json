@@ -1,11 +1,12 @@
 {
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:github.com)"
+    ]
+  },
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true
-  },
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:api.github.com)"
-    ]
   }
 }
