@@ -133,6 +133,14 @@ show_result() { jq -r '.result // ""' "$1" 2>/dev/null; }
 stage_file() { echo "$OUTPUT_DIR/stage${1}.json"; }
 check_stage_result() { local f=$(stage_file "$1"); [[ -f "$f" ]] && jq -er '.result // empty' "$f" 2>/dev/null; }
 
+# Extract embedded JSON from stage result (agent outputs JSON in markdown code block)
+extract_stage_json() {
+  local stage_file="$1" field="$2" default="${3:-}"
+  local result=$(jq -r '.result // ""' "$stage_file" 2>/dev/null)
+  local json=$(echo "$result" | sed -n '/```json/,/```/p' | sed '1d;$d')
+  [[ -n "$json" ]] && echo "$json" | jq -r "$field // \"$default\"" 2>/dev/null || echo "$default"
+}
+
 # Check if lock is stale (process no longer running)
 check_stale_lock() {
   [[ -d "$LOCKDIR" ]] || return 0
@@ -273,23 +281,24 @@ build_prompt() {
   hint="${HINT:-}"
 
   # Extract structured fields from stage1.json if it exists (for stage 2)
+  # Note: Claude CLI wraps output; embedded JSON is in .result as markdown code block
   local stage1_files="" stage1_pattern="" stage1_constraints="" stage1_plan=""
   local stage1=$(stage_file 1)
   if [[ -f "$stage1" ]]; then
-    stage1_files=$(jq -r '.research.files // [] | join(", ")' "$stage1" 2>/dev/null) || stage1_files=""
-    stage1_pattern=$(jq -r '.research.pattern // ""' "$stage1" 2>/dev/null) || stage1_pattern=""
-    stage1_constraints=$(jq -r '.research.constraints // [] | join(", ")' "$stage1" 2>/dev/null) || stage1_constraints=""
-    stage1_plan=$(jq -r '.plan // [] | to_entries | map("  \(.key + 1). \(.value)") | join("\n")' "$stage1" 2>/dev/null) || stage1_plan=""
+    stage1_files=$(extract_stage_json "$stage1" '.research.files | join(", ")' "")
+    stage1_pattern=$(extract_stage_json "$stage1" '.research.pattern' "")
+    stage1_constraints=$(extract_stage_json "$stage1" '.research.constraints | join(", ")' "")
+    stage1_plan=$(extract_stage_json "$stage1" '.plan | to_entries | map("  \(.key + 1). \(.value)") | join("\n")' "")
   fi
 
   # Extract structured fields from stage2.json if it exists (for stage 3)
   local stage2_files="" stage2_added="" stage2_removed="" stage2_validation=""
   local stage2=$(stage_file 2)
   if [[ -f "$stage2" ]]; then
-    stage2_files=$(jq -r '.files_changed // [] | join(", ")' "$stage2" 2>/dev/null) || stage2_files=""
-    stage2_added=$(jq -r '.lines_added // 0' "$stage2" 2>/dev/null) || stage2_added="0"
-    stage2_removed=$(jq -r '.lines_removed // 0' "$stage2" 2>/dev/null) || stage2_removed="0"
-    stage2_validation=$(jq -r '.validation // ""' "$stage2" 2>/dev/null) || stage2_validation=""
+    stage2_files=$(extract_stage_json "$stage2" '.files_changed | join(", ")' "")
+    stage2_added=$(extract_stage_json "$stage2" '.lines_added' "0")
+    stage2_removed=$(extract_stage_json "$stage2" '.lines_removed' "0")
+    stage2_validation=$(extract_stage_json "$stage2" '.validation' "")
   fi
 
   # awk substitution (ENVIRON avoids escaping issues with -v)
@@ -492,8 +501,8 @@ if ! execute_stage 1 "Research" "research"; then
   exit $EXIT_STAGE_FAILED
 fi
 
-# Validate stage 1 output
-if ! jq -e '.status == "SUCCESS"' "$(stage_file 1)" >/dev/null 2>&1; then
+# Validate stage 1 output (CLI wraps result - check is_error flag)
+if jq -e '.is_error == true' "$(stage_file 1)" >/dev/null 2>&1; then
   log "Stage 1 did not succeed"
   exit $EXIT_STAGE_FAILED
 fi
@@ -505,8 +514,8 @@ if ! execute_stage 2 "Implement" "implement" 1; then
   exit $EXIT_STAGE_FAILED
 fi
 
-# Check if implementation succeeded
-if ! jq -e '.status == "SUCCESS"' "$(stage_file 2)" >/dev/null 2>&1; then
+# Check if implementation succeeded (CLI wraps result - check is_error flag)
+if jq -e '.is_error == true' "$(stage_file 2)" >/dev/null 2>&1; then
   log "Stage 2 did not succeed"
   exit $EXIT_STAGE_FAILED
 fi
