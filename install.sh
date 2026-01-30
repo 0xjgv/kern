@@ -83,7 +83,7 @@ if download "$DOWNLOAD_URL" "$TEMP_DIR/kern.tar.gz" 2>/dev/null; then
     EXPECTED=$(cut -d' ' -f1 "$TEMP_DIR/kern.tar.gz.sha256")
     verify_checksum "$TEMP_DIR/kern.tar.gz" "$EXPECTED"
   else
-    warn "No checksum file available, skipping verification"
+    error "No checksum file available. Verification is required for security."
   fi
 
   tar xzf "$TEMP_DIR/kern.tar.gz" -C "$KERN_DIR" || error "Failed to extract archive"
