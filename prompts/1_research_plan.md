@@ -7,7 +7,7 @@ Research the codebase and create an implementation plan.
 
 ## Pre-Planning Checklist
 
-### Required (human-provided)
+### Required
 - [ ] Scope: What files/directories to touch?
 - [ ] Excludes: What to explicitly avoid?
 - [ ] Boundary: backend | frontend | fullstack

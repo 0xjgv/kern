@@ -210,7 +210,13 @@ run_task() {
   SKIP_TASK=false  # Reset for each task
   [[ -z "$TASK_ID" ]] && log "Selecting next task..."
   run_stage 1 "Research & Planning" opus || return 1
-  # TASK_ID now set by Stage 1
+
+  # Check if Stage 1 found a task (task_id=none means queue empty)
+  if [[ -z "$TASK_ID" ]]; then
+    log "No more tasks in queue"
+    return 1
+  fi
+
   log "Executing task: $TASK_ID"
 
   # Short-circuit if task already complete
