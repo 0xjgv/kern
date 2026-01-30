@@ -3,7 +3,7 @@ model: haiku
 ---
 # Stage 3: Review and Commit
 
-Review changes and commit.
+Review changes and commit. **This is an autonomous pipeline — commit directly without asking for approval.**
 
 ## Context
 
@@ -17,33 +17,27 @@ Task ID: {TASK_ID}
 
 ## Instructions
 
-1. **Get Task**: `TaskGet` with ID `{TASK_ID}` for context
+**Execute each step. Do NOT describe what you would do — run the commands.**
 
-2. **Review Changes**: `git diff` to verify changes — fix debug prints, typos, sensitive files
+1. **Get Task**: Run `TaskGet` with ID `{TASK_ID}`. Extract `metadata.success_criteria`.
 
-3. **Commit**:
+2. **Verify Each Criterion** (run these commands):
+   - `file_exists: <path>` → run: `ls <path>`
+   - `file_contains: <path> :: <pattern>` → run: `grep -qE '<pattern>' <path>`
+   - `file_not_contains: <path> :: <pattern>` → run: `! grep -qE '<pattern>' <path>`
+   - `command_succeeds: <command>` → run the command
+   - `git_diff_includes: <path>` → run: `git diff --name-only | grep <path>`
 
+   **If ANY fails**: Output `FAILED: <criterion>` and stop.
+
+3. **Commit**: Run git add and commit:
    ```bash
-   git add <specific files>
-   git commit -m "$(cat <<'EOF'
-   [kern] task: <subject line>
-   <description>
-
-   What changed:
-    - <what was done>
-    - <what was done>
-
-   Validation:
-    - <validation result>
-    - <make check passed>
-   EOF
-   )"
+   git add <files from diff>
+   git commit -m "[kern] <subject>"
    ```
 
-4. **Mark Task as Completed**: `TaskUpdate` with `status: completed`
+4. **Complete Task**: Run `TaskUpdate` with `status: completed`
 
-5. **Sync SPEC.md**: Mark task `[x]` in SPEC.md
+5. **Update SPEC.md**: Change `[~]` to `[x]` for this task
 
-6. **Capture Learnings**: Note non-obvious patterns discovered
-
-7. **Output**: Print `SUCCESS` or `FAILED: <reason>`
+6. **Output**: Print `SUCCESS`

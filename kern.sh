@@ -61,8 +61,29 @@ mark_spec_line() {
 }
 
 # === Claude CLI ===
-# Read-only stages (0, 1, 3) - pre-approve only safe tools via --allowedTools
-# This avoids permission prompts while restricting access
+# Stage-specific tool restrictions via --allowedTools
+# Stage 0: Read + Task tools (create/update tasks from SPEC.md)
+cld_s0() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskCreate,TaskUpdate" "$@"
+}
+
+# Stage 1: Read + Task tools + Task agent (for research subagents)
+cld_s1() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskUpdate,Task" "$@"
+}
+
+# Stage 3: Read + Task tools + Bash (for git commit)
+cld_s3() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskUpdate,Bash" "$@"
+}
+
+# Legacy read-only alias (deprecated - use stage-specific functions)
 cld_ro() {
   CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
   CLAUDE_CODE_ENABLE_TASKS=true \
@@ -139,9 +160,15 @@ run_stage() {
     return 0
   fi
 
-  # Select CLI based on stage: read-only for 0,1,3; read-write for 2
-  local cli_cmd="cld_ro"
-  [[ "$num" -eq 2 ]] && cli_cmd="cld_rw"
+  # Select CLI based on stage number
+  local cli_cmd
+  case "$num" in
+    0) cli_cmd="cld_s0" ;;
+    1) cli_cmd="cld_s1" ;;
+    2) cli_cmd="cld_rw" ;;
+    3) cli_cmd="cld_s3" ;;
+    *) cli_cmd="cld_ro" ;;
+  esac
 
   output=$(build_prompt "$tpl" | $cli_cmd --model "${model:-$default_model}" \
     $($VERBOSE && echo "--verbose") -p "$(cat -)" 2>&1) || return 1
@@ -151,6 +178,14 @@ run_stage() {
     TASK_ID="${BASH_REMATCH[1]}"
     export TASK_ID
     debug "Stage 1 selected task: $TASK_ID"
+
+    # Check for skip signal (task already complete)
+    if [[ "$output" =~ skip=true ]]; then
+      SKIP_TASK=true
+      export SKIP_TASK
+      debug "Task $TASK_ID already complete, will skip"
+    fi
+
     echo "$output"
   fi
 
@@ -167,13 +202,29 @@ run_stage_0() {
     return 0
   fi
 
-  SPEC_FILE="SPEC.md" build_prompt "$tpl" | cld_ro --model haiku \
+  SPEC_FILE="SPEC.md" build_prompt "$tpl" | cld_s0 --model haiku \
     $($VERBOSE && echo "--verbose") -p "$(cat -)" || return 1
 }
 
 run_task() {
-  log "Executing task: ${TASK_ID:-<pending>}"
+  SKIP_TASK=false  # Reset for each task
+  [[ -z "$TASK_ID" ]] && log "Selecting next task..."
   run_stage 1 "Research & Planning" opus || return 1
+
+  # Check if Stage 1 found a task (task_id=none means queue empty)
+  if [[ -z "$TASK_ID" ]]; then
+    log "No more tasks in queue"
+    return 1
+  fi
+
+  log "Executing task: $TASK_ID"
+
+  # Short-circuit if task already complete
+  if $SKIP_TASK; then
+    log "Task $TASK_ID already complete, skipping implementation"
+    return 0
+  fi
+
   # TASK_ID now set by Stage 1
   run_stage 2 "Implement" opus || return 1
   if ! git diff --quiet || ! git diff --cached --quiet; then
