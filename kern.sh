@@ -1,6 +1,15 @@
 #!/bin/bash
 set -eo pipefail
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERSION="0.1.0-dev"
+
+# Resolve symlinks to find actual script location (portable for macOS/Linux)
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 
 # === Logging ===
 debug() { ${VERBOSE:-false} && echo "[$(date '+%H:%M:%S')] [DEBUG] $1" >&2 || true; }
@@ -74,6 +83,13 @@ PROJECT_ID=$(git_project_id) BRANCH=$(git_branch_safe)
 export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
 VERBOSE=false DRY_RUN=false HINT=""
 PROMPTS="$SCRIPT_DIR/prompts"
+
+# Handle special flags before getopts
+case "${1:-}" in
+  -V|--version) echo "kern $VERSION"; exit 0 ;;
+  --update) curl -fsSL https://raw.githubusercontent.com/0xjgv/kern/main/install.sh | bash; exit $? ;;
+  -h|--help) echo "Usage: kern [-v] [-n] [-c COUNT] [--hint TEXT] [task_id]"; exit 0 ;;
+esac
 
 while getopts "vnc:h-:" opt; do
   case "$opt" in
