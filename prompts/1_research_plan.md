@@ -54,9 +54,9 @@ Hint: {HINT}
    - `metadata.research.pattern`: Pattern to follow
    - `metadata.research.constraints`: Array of constraints
    - `metadata.plan`: Array of implementation steps
-   - `metadata.success_criteria`: Array of verifiable assertions
+   - `metadata.success_criteria`: Array of verifiable assertions (**REQUIRED** — Stage 3 verifies these before commit)
 
-   **Success Criteria Format**:
+   **Success Criteria Format** (at least one required):
    - `file_exists: <path>` — File must exist
    - `file_contains: <path> :: <pattern>` — File must contain regex pattern
    - `file_not_contains: <path> :: <pattern>` — File must NOT contain pattern

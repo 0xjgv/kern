@@ -105,14 +105,17 @@ Task metadata (research findings, plan) is accessed via `TaskGet`.
 
 ## Tool Restrictions
 
-Tool restrictions are enforced via stage prompts (not script-level):
+Tool restrictions are enforced via `--allowedTools` flag in kern.sh:
 
-| Stage | Allowed Tools |
-|-------|--------------|
-| 0: Populate | TaskList, TaskCreate, Read |
-| 1: Research | Read, Glob, Grep, Task, TaskGet, TaskUpdate |
-| 2: Implement | All (full access) |
-| 3: Commit | Read, Glob, Grep, TaskUpdate, git commands |
+| Stage | Mode | Allowed Tools |
+|-------|------|--------------|
+| 0: Populate | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList |
+| 1: Research | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList |
+| 2: Implement | Full access | All tools (--dangerously-skip-permissions) |
+| 3: Commit | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList |
+
+**Note**: Read-only stages (0, 1, 3) use `cld_ro()` which limits tools via CLI flag.
+Stage 2 uses `cld_rw()` with full permissions for file edits and bash commands.
 
 ## Task State
 
@@ -187,10 +190,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq
-          npm install -g @anthropic-ai/claude-code
+      - name: Install Claude CLI
+        run: npm install -g @anthropic-ai/claude-code
 
       - name: Install kern
         run: curl -fsSL https://raw.githubusercontent.com/0xjgv/kern/main/install.sh | sh

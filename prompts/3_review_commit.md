@@ -3,7 +3,7 @@ model: haiku
 ---
 # Stage 3: Review and Commit
 
-Review changes and commit.
+Review changes and commit. **This is an autonomous pipeline — commit directly without asking for approval.**
 
 ## Context
 
