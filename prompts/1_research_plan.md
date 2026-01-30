@@ -54,6 +54,14 @@ Hint: {HINT}
    - `metadata.research.pattern`: Pattern to follow
    - `metadata.research.constraints`: Array of constraints
    - `metadata.plan`: Array of implementation steps
+   - `metadata.success_criteria`: Array of verifiable assertions
+
+   **Success Criteria Format**:
+   - `file_exists: <path>` — File must exist
+   - `file_contains: <path> :: <pattern>` — File must contain regex pattern
+   - `file_not_contains: <path> :: <pattern>` — File must NOT contain pattern
+   - `command_succeeds: <command>` — Shell command exits 0
+   - `git_diff_includes: <path>` — Changes include this file
 
 5. **Update Checklist** (if failure detected):
    - Edit THIS file: `prompts/1_research_plan.md`
