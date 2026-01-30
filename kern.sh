@@ -7,6 +7,28 @@ debug() { ${VERBOSE:-false} && echo "[$(date '+%H:%M:%S')] [DEBUG] $1" >&2 || tr
 log() { echo "[$(date '+%H:%M:%S')] $1" >&2; }
 die() { log "ERROR: $2"; exit "$1"; }
 
+# === Security: Input Sanitization ===
+# Escape awk gsub() metacharacters (& and \)
+sanitize_for_awk() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/&/\\&/g'
+}
+
+# Validate hint - reject prompt injection patterns
+validate_hint() {
+  local hint="$1"
+  if [[ ${#hint} -gt 500 ]]; then
+    die 1 "HINT too long (max 500 chars)"
+  fi
+  if echo "$hint" | grep -qiE 'ignore.*(previous|all).*instructions|disregard.*above|</(system|user)>'; then
+    die 1 "HINT contains suspicious pattern"
+  fi
+}
+
+# Wrap content to mark as untrusted data
+wrap_untrusted() {
+  printf '<data source="%s">\n%s\n</data>' "$1" "$2"
+}
+
 # === Git Utilities ===
 git_project_id() { basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)"; }
 git_branch_safe() { local b=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown"); echo "${b//\//-}"; }
@@ -29,8 +51,24 @@ mark_spec_line() {
 }
 
 # === Claude CLI ===
+# Read-only stages (0, 1, 3) - pre-approve only safe tools via --allowedTools
+# This avoids permission prompts while restricting access
+cld_ro() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskUpdate,TaskList,TaskCreate" "$@"
+}
+
+# Write stage (2) - needs full permissions for edits and bash
+cld_rw() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --dangerously-skip-permissions "$@"
+}
+
+# Deprecated aliases for backward compat
 cldd() { claude --dangerously-skip-permissions "$@"; }
-cld() { CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" CLAUDE_CODE_ENABLE_TASKS=true cldd "$@"; }
+cld() { cld_ro "$@"; }
 
 PROJECT_ID=$(git_project_id) BRANCH=$(git_branch_safe)
 export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
@@ -43,7 +81,7 @@ while getopts "vnc:h-:" opt; do
     c) MAX_TASKS="$OPTARG" ;;
     h) die 1 "Usage: kern [-v] [-n] [-c COUNT] [--hint TEXT] [task_id]" ;;
     -) case "$OPTARG" in
-         hint) HINT="${!OPTIND}"; shift ;; verbose) VERBOSE=true ;;
+         hint) HINT="${!OPTIND}"; validate_hint "$HINT"; shift ;; verbose) VERBOSE=true ;;
          dry-run) DRY_RUN=true ;; count) MAX_TASKS="${!OPTIND}"; shift ;;
          *) die 1 "Unknown: --$OPTARG" ;;
        esac ;;
@@ -55,10 +93,15 @@ MAX_TASKS="${MAX_TASKS:-5}"  # Default 5 iterations
 
 build_prompt() {
   local tpl="$1"
-  TASK_ID="${TASK_ID:-}" HINT="${HINT:-}" \
-  DIFF="$(git diff --stat 2>/dev/null | head -30)" \
-  RECENT_COMMITS="$(git log -5 --format='[%h] %s%n%b' --stat 2>&1 | head -80 || echo 'No commits yet')" \
-  SPEC_FILE="${SPEC_FILE:-SPEC.md}" \
+  local safe_task_id safe_hint safe_diff safe_commits
+
+  safe_task_id="$(sanitize_for_awk "${TASK_ID:-}")"
+  safe_hint="$(sanitize_for_awk "$(wrap_untrusted 'hint' "${HINT:-}")")"
+  safe_diff="$(sanitize_for_awk "$(wrap_untrusted 'git-diff' "$(git diff --stat 2>/dev/null | head -30)")")"
+  safe_commits="$(sanitize_for_awk "$(wrap_untrusted 'git-log' "$(git log -5 --format='[%h] %s' 2>&1 | head -80 || echo 'none')")")"
+
+  TASK_ID="$safe_task_id" HINT="$safe_hint" DIFF="$safe_diff" \
+  RECENT_COMMITS="$safe_commits" SPEC_FILE="${SPEC_FILE:-SPEC.md}" \
   awk '/^---$/ { if (++fm == 2) next } fm < 2 && fm > 0 { next }
        { gsub(/\{TASK_ID\}/, ENVIRON["TASK_ID"])
          gsub(/\{HINT\}/, ENVIRON["HINT"])
@@ -80,7 +123,11 @@ run_stage() {
     return 0
   fi
 
-  output=$(build_prompt "$tpl" | cld --model "${model:-$default_model}" \
+  # Select CLI based on stage: read-only for 0,1,3; read-write for 2
+  local cli_cmd="cld_ro"
+  [[ "$num" -eq 2 ]] && cli_cmd="cld_rw"
+
+  output=$(build_prompt "$tpl" | $cli_cmd --model "${model:-$default_model}" \
     $($VERBOSE && echo "--verbose") -p "$(cat -)" 2>&1) || return 1
 
   # Stage 1 outputs task_id it selected/created
@@ -88,6 +135,7 @@ run_stage() {
     TASK_ID="${BASH_REMATCH[1]}"
     export TASK_ID
     debug "Stage 1 selected task: $TASK_ID"
+    echo "$output"
   fi
 
   # Check for SUCCESS in output
@@ -103,7 +151,7 @@ run_stage_0() {
     return 0
   fi
 
-  SPEC_FILE="SPEC.md" build_prompt "$tpl" | cld --model haiku \
+  SPEC_FILE="SPEC.md" build_prompt "$tpl" | cld_ro --model haiku \
     $($VERBOSE && echo "--verbose") -p "$(cat -)" || return 1
 }
 
