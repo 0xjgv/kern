@@ -29,6 +29,9 @@ fi
 info "Installing to $KERN_DIR..."
 mkdir -p "$KERN_DIR" "$BIN_DIR"
 
+# Clean old prompts to avoid stale files mixing with new ones
+rm -rf "$KERN_DIR/prompts"
+
 # Download latest release
 DOWNLOAD_URL="https://github.com/$REPO/releases/latest/download/kern.tar.gz"
 if ! curl -fsSL "$DOWNLOAD_URL" | tar xz -C "$KERN_DIR" 2>/dev/null; then
