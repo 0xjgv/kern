@@ -34,5 +34,8 @@ Hint: {HINT}
    - `metadata.research.constraints`: Array of constraints
    - `metadata.plan`: Array of implementation steps
 
-4. **Output**: Print `SUCCESS task_id=<ID>` or `FAILED: <reason>`
-   - If no tasks in queue: Print `SUCCESS task_id=none`
+4. **Output**:
+   - Task complete, proceed to implement: `SUCCESS task_id=<ID>`
+   - Task already done (code exists, tests pass): `SUCCESS task_id=<ID> skip=true`
+   - No tasks in queue: `SUCCESS task_id=none`
+   - Error: `FAILED: <reason>`

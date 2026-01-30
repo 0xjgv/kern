@@ -151,6 +151,14 @@ run_stage() {
     TASK_ID="${BASH_REMATCH[1]}"
     export TASK_ID
     debug "Stage 1 selected task: $TASK_ID"
+
+    # Check for skip signal (task already complete)
+    if [[ "$output" =~ skip=true ]]; then
+      SKIP_TASK=true
+      export SKIP_TASK
+      debug "Task $TASK_ID already complete, will skip"
+    fi
+
     echo "$output"
   fi
 
@@ -172,8 +180,18 @@ run_stage_0() {
 }
 
 run_task() {
-  log "Executing task: ${TASK_ID:-<pending>}"
+  SKIP_TASK=false  # Reset for each task
+  [[ -z "$TASK_ID" ]] && log "Selecting next task..."
   run_stage 1 "Research & Planning" opus || return 1
+  # TASK_ID now set by Stage 1
+  log "Executing task: $TASK_ID"
+
+  # Short-circuit if task already complete
+  if $SKIP_TASK; then
+    log "Task $TASK_ID already complete, skipping implementation"
+    return 0
+  fi
+
   # TASK_ID now set by Stage 1
   run_stage 2 "Implement" opus || return 1
   if ! git diff --quiet || ! git diff --cached --quiet; then
