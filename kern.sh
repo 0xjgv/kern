@@ -19,14 +19,15 @@ validate_hint() {
   if [[ ${#hint} -gt 500 ]]; then
     die 1 "HINT too long (max 500 chars)"
   fi
-  if echo "$hint" | grep -qiE 'ignore.*(previous|all).*instructions|disregard.*above|</(system|user)>'; then
+  if echo "$hint" | grep -qiE 'ignore.*(previous|all).*instructions|disregard.*above|</(system|user|data)>'; then
     die 1 "HINT contains suspicious pattern"
   fi
 }
 
 # Wrap content to mark as untrusted data
 wrap_untrusted() {
-  printf '<data source="%s">\n%s\n</data>' "$1" "$2"
+  local escaped=$(printf '%s' "$2" | sed 's|</data>|<\\/data>|gi')
+  printf '<data source="%s">\n%s\n</data>' "$1" "$escaped"
 }
 
 # === Git Utilities ===
@@ -56,7 +57,7 @@ mark_spec_line() {
 cld_ro() {
   CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
   CLAUDE_CODE_ENABLE_TASKS=true \
-  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskUpdate,TaskList,TaskCreate" "$@"
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList" "$@"
 }
 
 # Write stage (2) - needs full permissions for edits and bash
@@ -66,9 +67,8 @@ cld_rw() {
   claude --dangerously-skip-permissions "$@"
 }
 
-# Deprecated aliases for backward compat
+# Legacy alias (deprecated - use cld_ro or cld_rw explicitly)
 cldd() { claude --dangerously-skip-permissions "$@"; }
-cld() { cld_ro "$@"; }
 
 PROJECT_ID=$(git_project_id) BRANCH=$(git_branch_safe)
 export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
