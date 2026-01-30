@@ -45,5 +45,9 @@ Task ID: {TASK_ID}
 5. **Sync SPEC.md**: Mark task `[x]` in SPEC.md
 
 6. **Capture Learnings**: Note non-obvious patterns discovered
+   - If implementation had issues that better planning would have caught:
+   - Edit `prompts/1_research_plan.md`
+   - Append to "Failure-Derived Checks" section between markers
+   - Format: `- [ ] [YYYY-MM-DD] <check> (reason: <what went wrong>)`
 
 7. **Output**: Print `SUCCESS` or `FAILED: <reason>`
