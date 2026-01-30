@@ -34,17 +34,20 @@ jobs:
       - name: Inject version
         run: sed -i "s/^VERSION=.*/VERSION=\"${{ inputs.version }}\"/" kern.sh
 
-      - name: Create tarball
+      - name: Create tarball and checksum
         run: |
           mkdir -p dist
           tar -czvf dist/kern.tar.gz \
             kern.sh \
             prompts/ \
             README.md
+          cd dist && shasum -a 256 kern.tar.gz > kern.tar.gz.sha256
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
-          files: dist/kern.tar.gz
+          files: |
+            dist/kern.tar.gz
+            dist/kern.tar.gz.sha256
           generate_release_notes: true
