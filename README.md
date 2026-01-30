@@ -109,12 +109,12 @@ Tool restrictions are enforced via `--allowedTools` flag in kern.sh:
 
 | Stage | Mode | Allowed Tools |
 |-------|------|--------------|
-| 0: Populate | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList |
-| 1: Research | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList |
+| 0: Populate | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskCreate, TaskUpdate |
+| 1: Research | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Task |
 | 2: Implement | Full access | All tools (--dangerously-skip-permissions) |
-| 3: Commit | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList |
+| 3: Commit | Commit-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Bash |
 
-**Note**: Read-only stages (0, 1, 3) use `cld_ro()` which limits tools via CLI flag.
+**Note**: Stages 0, 1, 3 use `cld_s0()`, `cld_s1()`, `cld_s3()` respectively, pre-approving tools via CLI flag.
 Stage 2 uses `cld_rw()` with full permissions for file edits and bash commands.
 
 ## Task State
@@ -138,8 +138,10 @@ Tasks are tracked in two places:
 
 Each stage outputs one of:
 
-- `SUCCESS` — Stage completed successfully
+- `SUCCESS` — Stage completed successfully (may include metadata like `task_id=N`, `skip=true`)
 - `FAILED: <reason>` — Stage failed with explanation
+
+Stage 0 outputs `SUCCESS created=N existing=M` showing queue population stats.
 
 ## Debugging
 

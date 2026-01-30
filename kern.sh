@@ -61,8 +61,29 @@ mark_spec_line() {
 }
 
 # === Claude CLI ===
-# Read-only stages (0, 1, 3) - pre-approve only safe tools via --allowedTools
-# This avoids permission prompts while restricting access
+# Stage-specific tool restrictions via --allowedTools
+# Stage 0: Read + Task tools (create/update tasks from SPEC.md)
+cld_s0() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskCreate,TaskUpdate" "$@"
+}
+
+# Stage 1: Read + Task tools + Task agent (for research subagents)
+cld_s1() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskUpdate,Task" "$@"
+}
+
+# Stage 3: Read + Task tools + Bash (for git commit)
+cld_s3() {
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskUpdate,Bash" "$@"
+}
+
+# Legacy read-only alias (deprecated - use stage-specific functions)
 cld_ro() {
   CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
   CLAUDE_CODE_ENABLE_TASKS=true \
@@ -139,9 +160,15 @@ run_stage() {
     return 0
   fi
 
-  # Select CLI based on stage: read-only for 0,1,3; read-write for 2
-  local cli_cmd="cld_ro"
-  [[ "$num" -eq 2 ]] && cli_cmd="cld_rw"
+  # Select CLI based on stage number
+  local cli_cmd
+  case "$num" in
+    0) cli_cmd="cld_s0" ;;
+    1) cli_cmd="cld_s1" ;;
+    2) cli_cmd="cld_rw" ;;
+    3) cli_cmd="cld_s3" ;;
+    *) cli_cmd="cld_ro" ;;
+  esac
 
   output=$(build_prompt "$tpl" | $cli_cmd --model "${model:-$default_model}" \
     $($VERBOSE && echo "--verbose") -p "$(cat -)" 2>&1) || return 1
@@ -175,7 +202,7 @@ run_stage_0() {
     return 0
   fi
 
-  SPEC_FILE="SPEC.md" build_prompt "$tpl" | cld_ro --model haiku \
+  SPEC_FILE="SPEC.md" build_prompt "$tpl" | cld_s0 --model haiku \
     $($VERBOSE && echo "--verbose") -p "$(cat -)" || return 1
 }
 
