@@ -17,45 +17,27 @@ Task ID: {TASK_ID}
 
 ## Instructions
 
-1. **Get Task**: `TaskGet` with ID `{TASK_ID}`
-   - Extract `metadata.success_criteria` array
-   - If missing, log warning and proceed with standard review
+**Execute each step. Do NOT describe what you would do — run the commands.**
 
-2. **Verify Success Criteria**: For each criterion:
-   - `file_exists: <path>` — `ls <path>`
-   - `file_contains: <path> :: <pattern>` — `grep -qE '<pattern>' <path>`
-   - `file_not_contains: <path> :: <pattern>` — `! grep -qE '<pattern>' <path>`
-   - `command_succeeds: <command>` — Run command, check exit 0
-   - `git_diff_includes: <path>` — Check `git diff --name-only`
+1. **Get Task**: Run `TaskGet` with ID `{TASK_ID}`. Extract `metadata.success_criteria`.
 
-   **If ANY criterion fails**: Output `FAILED: Criterion not met: <criterion>` — do NOT commit
+2. **Verify Each Criterion** (run these commands):
+   - `file_exists: <path>` → run: `ls <path>`
+   - `file_contains: <path> :: <pattern>` → run: `grep -qE '<pattern>' <path>`
+   - `file_not_contains: <path> :: <pattern>` → run: `! grep -qE '<pattern>' <path>`
+   - `command_succeeds: <command>` → run the command
+   - `git_diff_includes: <path>` → run: `git diff --name-only | grep <path>`
 
-3. **Review Changes**: `git diff` to verify changes — fix debug prints, typos, sensitive files
+   **If ANY fails**: Output `FAILED: <criterion>` and stop.
 
-4. **Commit** (only after verification passes):
-
+3. **Commit**: Run git add and commit:
    ```bash
-   git add <specific files>
-   git commit -m "$(cat <<'EOF'
-   [kern] task: <subject>
-
-   What changed:
-    - <change>
-
-   Verified:
-    - <criterion>: PASS
-   EOF
-   )"
+   git add <files from diff>
+   git commit -m "[kern] <subject>"
    ```
 
-5. **Mark Task as Completed**: `TaskUpdate` with `status: completed`
+4. **Complete Task**: Run `TaskUpdate` with `status: completed`
 
-6. **Sync SPEC.md**: Mark task `[x]` in SPEC.md
+5. **Update SPEC.md**: Change `[~]` to `[x]` for this task
 
-7. **Capture Learnings**: Note non-obvious patterns discovered
-   - If implementation had issues that better planning would have caught:
-   - Edit `prompts/1_research_plan.md`
-   - Append to "Failure-Derived Checks" section between markers
-   - Format: `- [ ] [YYYY-MM-DD] <check> (reason: <what went wrong>)`
-
-8. **Output**: Print `SUCCESS` or `FAILED: <reason>`
+6. **Output**: Print `SUCCESS`
