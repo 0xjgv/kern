@@ -27,7 +27,7 @@ kern --update
 │  Populate Queue  │ ──▶ │  Research & Plan │ ──▶ │  Implement       │ ──▶ │  Validate&Commit │
 │  (haiku)         │     │  (opus)          │     │  (opus)          │     │  (haiku)         │
 │                  │     │                  │     │                  │     │                  │
-│  - Parse SPEC.md │     │  - Select task   │     │  - Follow plan   │     │  - Review diff   │
+│  - Parse SPEC.md │     │  - Select task   │     │  - Follow plan   │     │  - Verify checks │
 │  - Create tasks  │     │  - Research code │     │  - Make changes  │     │  - Create commit │
 │  - Idempotent    │     │  - Store plan    │     │  - Validate      │     │  - Mark complete │
 └──────────────────┘     └──────────────────┘     └──────────────────┘     └──────────────────┘
@@ -129,6 +129,7 @@ Tasks are tracked in two places:
 - `metadata.spec_line`: Line number in SPEC.md
 - `metadata.research`: Files, patterns, constraints from Stage 1
 - `metadata.plan`: Implementation steps from Stage 1
+- `metadata.success_criteria`: Verifiable assertions checked by Stage 3 before commit
 - `metadata.implementation`: Changed files, validation from Stage 2
 
 ## Output Codes
@@ -164,8 +165,9 @@ The workflow:
 
 1. Validates version format and checks tag doesn't exist
 2. Injects version into `kern.sh`
-3. Creates tarball with `kern.sh`, `prompts/`, `README.md`
+3. Creates tarball with `kern.sh`, `prompts/`, `README.md` and SHA-256 checksum
 4. Creates git tag and GitHub Release with auto-generated notes
+5. Verifies both release assets (`kern.tar.gz`, `kern.tar.gz.sha256`) are present
 
 No local tags needed — the workflow handles everything.
 

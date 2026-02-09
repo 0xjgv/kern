@@ -61,7 +61,7 @@ mark_spec_line() {
 }
 
 # Legacy alias (deprecated - use cld_ro or cld_rw explicitly)
-export CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)"
+export CLAUDE_CODE_TASK_LIST_ID="kern-$(git_project_id)-$(git_branch_safe)"
 cldd() { claude --dangerously-skip-permissions "$@"; }
 export CLAUDE_CODE_ENABLE_TASKS=true
 
