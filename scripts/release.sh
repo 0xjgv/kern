@@ -24,7 +24,10 @@ echo "Releasing v${VERSION}..."
 # Push any pending commits
 git push origin main
 
-# Trigger release workflow
+# Trigger release workflow (generates tarball + sha256 checksum automatically)
+# IMPORTANT: Do not create releases manually with 'gh release create' —
+# the workflow ensures kern.tar.gz.sha256 is always included, which
+# install.sh requires for checksum verification.
 gh workflow run release.yml -f version="$VERSION"
 
 echo "Workflow triggered. View at: https://github.com/$(gh repo view --json nameWithOwner -q .nameWithOwner)/actions"

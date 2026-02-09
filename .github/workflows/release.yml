@@ -41,7 +41,8 @@ jobs:
             kern.sh \
             prompts/ \
             README.md
-          cd dist && shasum -a 256 kern.tar.gz > kern.tar.gz.sha256
+          cd dist && sha256sum kern.tar.gz > kern.tar.gz.sha256
+          echo "Checksum: $(cat dist/kern.tar.gz.sha256)"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -51,3 +52,19 @@ jobs:
             dist/kern.tar.gz
             dist/kern.tar.gz.sha256
           generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: Verify release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sleep 5
+          assets=$(gh release view "v${{ inputs.version }}" --json assets --jq '.assets[].name' | sort)
+          expected=$'kern.tar.gz\nkern.tar.gz.sha256'
+          if [[ "$assets" != "$expected" ]]; then
+            echo "Error: Release missing expected assets"
+            echo "Expected: $expected"
+            echo "Got: $assets"
+            exit 1
+          fi
+          echo "Verified: both kern.tar.gz and kern.tar.gz.sha256 present"
