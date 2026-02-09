@@ -3,11 +3,12 @@ model: opus
 ---
 # Stage 1: Research and Plan
 
-Research the codebase and create an implementation plan.
+Research the codebase and create an implementation plan in collaboration with 2 teammates.
 
 ## Pre-Planning Checklist
 
 ### Required
+
 - [ ] Scope: What files/directories to touch?
 - [ ] Excludes: What to explicitly avoid?
 - [ ] Boundary: backend | frontend | fullstack

@@ -1,18 +1,20 @@
 ---
 model: haiku
 ---
-# Stage 3: Review and Commit
+# Stage 3: Validate and Commit
 
-Review changes and commit. **This is an autonomous pipeline — commit directly without asking for approval.**
+Validate changes and commit. **This is an autonomous pipeline — commit directly without asking for approval.**
 
 ## Context
 
 Task ID: {TASK_ID}
 
 ### Recent Commits
+
 {RECENT_COMMITS}
 
 ### Changes
+
 {DIFF}
 
 ## Instructions
@@ -31,6 +33,7 @@ Task ID: {TASK_ID}
    **If ANY fails**: Output `FAILED: <criterion>` and stop.
 
 3. **Commit**: Run git add and commit:
+
    ```bash
    git add <files from diff>
    git commit -m "[kern] <subject>"
