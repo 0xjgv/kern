@@ -60,39 +60,48 @@ mark_spec_line() {
     'NR==n{sub(/\[(~| )\]/,"["s"]")} 1' "$spec_file" > "$tmp" && mv "$tmp" "$spec_file"
 }
 
-# Legacy alias (deprecated - use cld_ro or cld_rw explicitly)
-export CLAUDE_CODE_TASK_LIST_ID="kern-$(git_project_id)-$(git_branch_safe)"
-cldd() { claude --dangerously-skip-permissions "$@"; }
-export CLAUDE_CODE_ENABLE_TASKS=true
-
 # === Claude CLI ===
 # Stage-specific tool restrictions via --allowedTools
 # Stage 0: Read + Task tools (create/update tasks from SPEC.md)
 cld_s0() {
-  cldd "$@"
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskCreate,TaskUpdate" "$@"
 }
 
 # Stage 1: Read + Task tools + Task agent (for research subagents)
 cld_s1() {
-  cldd "$@"
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskUpdate,Task" "$@"
 }
 
 # Stage 3: Read + Task tools + Bash (for git commit)
 cld_s3() {
-  cldd "$@"
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskUpdate,Bash" "$@"
 }
 
 # Legacy read-only alias (deprecated - use stage-specific functions)
 cld_ro() {
-  cldd "$@"
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList" "$@"
 }
 
 # Write stage (2) - needs full permissions for edits and bash
 cld_rw() {
-  cldd "$@"
+  CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
+  CLAUDE_CODE_ENABLE_TASKS=true \
+  claude --dangerously-skip-permissions "$@"
 }
 
+# Legacy alias (deprecated - use cld_ro or cld_rw explicitly)
+cldd() { claude --dangerously-skip-permissions "$@"; }
 
+PROJECT_ID=$(git_project_id) BRANCH=$(git_branch_safe)
+export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
 VERBOSE=false DRY_RUN=false HINT=""
 PROMPTS="$SCRIPT_DIR/prompts"
 

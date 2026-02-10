@@ -24,10 +24,10 @@ kern --update
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
 │  STAGE 0         │     │  STAGE 1         │     │  STAGE 2         │     │  STAGE 3         │
-│  Populate Queue  │ ──▶ │  Research & Plan │ ──▶ │  Implement       │ ──▶ │  Validate&Commit │
+│  Populate Queue  │ ──▶ │  Research & Plan │ ──▶ │  Implement       │ ──▶ │  Review & Commit │
 │  (haiku)         │     │  (opus)          │     │  (opus)          │     │  (haiku)         │
 │                  │     │                  │     │                  │     │                  │
-│  - Parse SPEC.md │     │  - Select task   │     │  - Follow plan   │     │  - Verify checks │
+│  - Parse SPEC.md │     │  - Select task   │     │  - Follow plan   │     │  - Review diff   │
 │  - Create tasks  │     │  - Research code │     │  - Make changes  │     │  - Create commit │
 │  - Idempotent    │     │  - Store plan    │     │  - Validate      │     │  - Mark complete │
 └──────────────────┘     └──────────────────┘     └──────────────────┘     └──────────────────┘
@@ -38,7 +38,7 @@ kern --update
 1. **Context isolation**: Each stage starts fresh, avoiding 100K+ token sessions
 2. **Model selection**: Cheap models (haiku) for simple work, powerful models (opus) for complex work
 3. **Read-only exploration**: Stage 1 researches without modifying files
-4. **Restricted commit**: Stage 3 only validates and commits
+4. **Restricted commit**: Stage 3 only reviews and commits
 5. **Task queue**: Stage 0 syncs SPEC.md → TaskList for structured tracking
 
 ## Project Setup
@@ -105,14 +105,17 @@ Task metadata (research findings, plan) is accessed via `TaskGet`.
 
 ## Tool Restrictions
 
-Each stage has a dedicated CLI wrapper in kern.sh (`cld_s0`, `cld_s1`, `cld_rw`, `cld_s3`). Currently all stages run with `--dangerously-skip-permissions`; tool restrictions are enforced by prompt design — each stage prompt only instructs the model to use specific tools:
+Tool restrictions are enforced via `--allowedTools` flag in kern.sh:
 
-| Stage | Wrapper | Intended Tools |
-|-------|---------|---------------|
-| 0: Populate | `cld_s0()` | Read, Glob, Grep, TaskGet, TaskList, TaskCreate, TaskUpdate |
-| 1: Research | `cld_s1()` | Read, Glob, Grep, TaskGet, TaskList, TaskUpdate, Task |
-| 2: Implement | `cld_rw()` | All tools (full access) |
-| 3: Validate | `cld_s3()` | Read, Glob, Grep, TaskGet, TaskList, TaskUpdate, Bash |
+| Stage | Mode | Allowed Tools |
+|-------|------|--------------|
+| 0: Populate | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskCreate, TaskUpdate |
+| 1: Research | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Task |
+| 2: Implement | Full access | All tools (--dangerously-skip-permissions) |
+| 3: Commit | Commit-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Bash |
+
+**Note**: Stages 0, 1, 3 use `cld_s0()`, `cld_s1()`, `cld_s3()` respectively, pre-approving tools via CLI flag.
+Stage 2 uses `cld_rw()` with full permissions for file edits and bash commands.
 
 ## Task State
 
@@ -129,7 +132,6 @@ Tasks are tracked in two places:
 - `metadata.spec_line`: Line number in SPEC.md
 - `metadata.research`: Files, patterns, constraints from Stage 1
 - `metadata.plan`: Implementation steps from Stage 1
-- `metadata.success_criteria`: Verifiable assertions checked by Stage 3 before commit
 - `metadata.implementation`: Changed files, validation from Stage 2
 
 ## Output Codes
@@ -165,9 +167,8 @@ The workflow:
 
 1. Validates version format and checks tag doesn't exist
 2. Injects version into `kern.sh`
-3. Creates tarball with `kern.sh`, `prompts/`, `README.md` and SHA-256 checksum
+3. Creates tarball with `kern.sh`, `prompts/`, `README.md`
 4. Creates git tag and GitHub Release with auto-generated notes
-5. Verifies both release assets (`kern.tar.gz`, `kern.tar.gz.sha256`) are present
 
 No local tags needed — the workflow handles everything.
 

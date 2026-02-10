@@ -3,7 +3,7 @@ model: opus
 ---
 # Stage 2: Implement
 
-Implement the task based on research findings.
+Implement the task based on research findings in collaboration with 3 agent teammates.
 
 ## Context
 
@@ -14,18 +14,23 @@ Hint: {HINT}
 
 {RECENT_COMMITS}
 
+## Rules
+
+- **DO NOT run `git commit`, `git add`, or any git write commands.** Stage 3 handles commits.
+- **DO NOT modify pipeline files** (`kern.sh`, `prompts/`, `install.sh`, `scripts/`, `.github/`). These are infrastructure, not task scope.
+- Only change files specified in the task plan. If the plan is unclear, change less, not more.
+
 ## Instructions
 
 1. **Get Task**: `TaskGet` with ID `{TASK_ID}` — metadata contains research findings and plan
 
-2. **Implement**: Follow the plan from metadata, creating tasks for each step:
-   - Create tasks for each step
-   - Modify files in order specified by the tasks
+2. **Implement**: Follow the plan from metadata:
+   - Modify files in order specified by the plan
    - Keep changes minimal and focused
    - Follow the identified pattern
    - Respect constraints
 
-3. **Validate**: Run `make check` or appropriate validation
+3. **Validate**: Run validation commands from `metadata.success_criteria` if available
 
 4. **Store Implementation Details**: `TaskUpdate` with metadata:
    - `metadata.implementation.files_changed`: Array of file paths that were changed
