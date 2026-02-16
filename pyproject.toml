@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kern"
+version = "0.1.0-dev"
+description = "Autonomous staged development pipeline powered by Claude Code SDK."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "claude-code-sdk==0.0.25",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.4.1",
+]
+
+[project.scripts]
+kern = "kern.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -32,15 +32,27 @@ jobs:
           fi
 
       - name: Inject version
-        run: sed -i "s/^VERSION=.*/VERSION=\"${{ inputs.version }}\"/" kern.sh
+        run: |
+          sed -i "s/^VERSION = .*/VERSION = \"${{ inputs.version }}\"/" src/kern/version.py
+          sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" pyproject.toml
 
       - name: Create tarball and checksum
         run: |
           mkdir -p dist
           tar -czvf dist/kern.tar.gz \
-            kern.sh \
+            --exclude='src/**/__pycache__' \
+            --exclude='src/**/*.pyc' \
+            --exclude='src/**/*.pyo' \
+            --exclude='src/**/*.egg-info' \
+            --exclude='src/*.egg-info' \
+            pyproject.toml \
+            src/ \
             prompts/ \
-            README.md
+            README.md \
+            CLAUDE.md \
+            install.sh \
+            kern.sh \
+            agents.json
           cd dist && sha256sum kern.tar.gz > kern.tar.gz.sha256
           echo "Checksum: $(cat dist/kern.tar.gz.sha256)"
 

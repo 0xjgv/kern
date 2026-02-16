@@ -7,15 +7,18 @@ Recent Commits:
 {RECENT_COMMITS}
 Changes:
 {DIFF}
-1. TaskGet {TASK_ID}; read metadata.success_criteria.
-2. Verify criteria with commands: file_exists->ls, file_contains->grep -qE, file_not_contains->! grep -qE, command_succeeds->run, git_diff_includes->git diff --name-only | grep.
-3. If any fail: output FAILED: <criterion> and stop.
-4. Commit: git add <files from diff>; git commit -m "[kern] <subject>".
-5. TaskUpdate status=completed; update SPEC.md [~]->[x].
-6. Output only:
+1. Run `TaskGet {TASK_ID}`.
+2. Do final review of changed files for obvious regressions only.
+3. Commit only current task changes: `git add <files from diff>` then `git commit -m "[kern] <subject>"`.
+4. Run `TaskUpdate status=completed`.
+5. Mark corresponding SPEC line `[x]` using `metadata.spec_line`.
+6. Output only the exact contract below, no extra text:
+<<MACHINE>>
+{"stage":6,"status":"success","task_id":{TASK_ID},"queue_empty":false,"skip":false,"summary":"<short summary>"}
+<<END_MACHINE>>
 <<HANDOFF>>
 ## Review & Commit
-- Verified:
+- Reviewed:
 - Commit:
 <<END_HANDOFF>>
 SUCCESS

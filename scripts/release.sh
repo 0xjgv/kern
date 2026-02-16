@@ -24,7 +24,7 @@ echo "Releasing v${VERSION}..."
 # Push any pending commits
 git push origin main
 
-# Trigger release workflow (generates tarball + sha256 checksum automatically)
+# Trigger release workflow (generates Python runtime tarball + sha256 checksum automatically)
 # IMPORTANT: Do not create releases manually with 'gh release create' —
 # the workflow ensures kern.tar.gz.sha256 is always included, which
 # install.sh requires for checksum verification.
