@@ -69,14 +69,14 @@ cld_s0() {
   claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskCreate,TaskUpdate" "$@"
 }
 
-# Stage 1: Read + Task tools + Task agent (for research subagents)
+# Stage 1-4: Read + Task tools + Task agent (for research/design/structure/plan)
 cld_s1() {
   CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
   CLAUDE_CODE_ENABLE_TASKS=true \
   claude --allowedTools "Read,Glob,Grep,LS,TaskGet,TaskList,TaskUpdate,Task" "$@"
 }
 
-# Stage 3: Read + Task tools + Bash (for git commit)
+# Stage 6: Read + Task tools + Bash (for git commit)
 cld_s3() {
   CLAUDE_CODE_TASK_LIST_ID="$(git_project_id)-$(git_branch_safe)" \
   CLAUDE_CODE_ENABLE_TASKS=true \
@@ -104,6 +104,9 @@ PROJECT_ID=$(git_project_id) BRANCH=$(git_branch_safe)
 export CLAUDE_CODE_TASK_LIST_ID="kern-$PROJECT_ID-$BRANCH"
 VERBOSE=false DRY_RUN=false HINT=""
 PROMPTS="$SCRIPT_DIR/prompts"
+RUN_DIR="$(pwd -P)"
+KERN_DIR="$RUN_DIR/.kern"
+HANDOFF_DIR="$KERN_DIR/handoff"
 
 # Handle special flags before getopts
 case "${1:-}" in
@@ -130,21 +133,72 @@ MAX_TASKS="${MAX_TASKS:-5}"  # Default 5 iterations
 
 build_prompt() {
   local tpl="$1"
-  local safe_task_id safe_hint safe_diff safe_commits
+  local safe_task_id safe_hint safe_diff safe_commits safe_handoff
 
   safe_task_id="$(sanitize_for_awk "${TASK_ID:-}")"
   safe_hint="$(sanitize_for_awk "$(wrap_untrusted 'hint' "${HINT:-}")")"
   safe_diff="$(sanitize_for_awk "$(wrap_untrusted 'git-diff' "$(git diff --stat 2>/dev/null | head -30)")")"
   safe_commits="$(sanitize_for_awk "$(wrap_untrusted 'git-log' "$(git log -5 --format='[%h] %s' 2>&1 | head -80 || echo 'none')")")"
+  safe_handoff="$(sanitize_for_awk "${HANDOFF_FILE:-}")"
 
   TASK_ID="$safe_task_id" HINT="$safe_hint" DIFF="$safe_diff" \
-  RECENT_COMMITS="$safe_commits" SPEC_FILE="${SPEC_FILE:-SPEC.md}" \
+  RECENT_COMMITS="$safe_commits" SPEC_FILE="${SPEC_FILE:-SPEC.md}" HANDOFF_FILE="$safe_handoff" \
   awk '/^---$/ { if (++fm == 2) next } fm < 2 && fm > 0 { next }
        { gsub(/\{TASK_ID\}/, ENVIRON["TASK_ID"])
          gsub(/\{HINT\}/, ENVIRON["HINT"])
          gsub(/\{DIFF\}/, ENVIRON["DIFF"])
          gsub(/\{RECENT_COMMITS\}/, ENVIRON["RECENT_COMMITS"])
-         gsub(/\{SPEC_FILE\}/, ENVIRON["SPEC_FILE"]); print }' "$tpl"
+         gsub(/\{SPEC_FILE\}/, ENVIRON["SPEC_FILE"])
+         gsub(/\{HANDOFF_FILE\}/, ENVIRON["HANDOFF_FILE"]); print }' "$tpl"
+}
+
+handoff_path() { local id="$1"; echo "$HANDOFF_DIR/task-${id}.md"; }
+ensure_handoff_dir() { mkdir -p "$HANDOFF_DIR"; }
+
+init_handoff_file() {
+  local file="$1"
+  [[ -f "$file" ]] && return 0
+  cat > "$file" <<EOF
+# Task Handoff
+Task ID: ${TASK_ID:-unknown}
+Hint: ${HINT:-}
+Created: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+Run Directory: ${RUN_DIR}
+EOF
+}
+
+has_handoff_block() {
+  echo "$1" | grep -q '<<HANDOFF>>' && echo "$1" | grep -q '<<END_HANDOFF>>'
+}
+
+extract_handoff_block() {
+  awk 'BEGIN{in_block=0}
+       /<<HANDOFF>>/{in_block=1; next}
+       /<<END_HANDOFF>>/{exit}
+       in_block{print}' <<<"$1"
+}
+
+append_handoff_block() {
+  local file="$1" output="$2" block
+  if ! has_handoff_block "$output"; then
+    log "ERROR: Missing handoff block in stage output"
+    return 1
+  fi
+  block="$(extract_handoff_block "$output")"
+  if [[ -z "$block" ]]; then
+    log "ERROR: Empty handoff block"
+    return 1
+  fi
+  printf "\n%s\n" "$block" >> "$file"
+}
+
+append_handoff_block_optional() {
+  local file="$1" output="$2"
+  if has_handoff_block "$output"; then
+    append_handoff_block "$file" "$output"
+  else
+    debug "No handoff block found; skipping append"
+  fi
 }
 
 run_stage() {
@@ -164,9 +218,9 @@ run_stage() {
   local cli_cmd
   case "$num" in
     0) cli_cmd="cld_s0" ;;
-    1) cli_cmd="cld_s1" ;;
-    2) cli_cmd="cld_rw" ;;
-    3) cli_cmd="cld_s3" ;;
+    1|2|3|4) cli_cmd="cld_s1" ;;
+    5) cli_cmd="cld_rw" ;;
+    6) cli_cmd="cld_s3" ;;
     *) cli_cmd="cld_ro" ;;
   esac
 
@@ -186,11 +240,11 @@ run_stage() {
       debug "Task $TASK_ID already complete, will skip"
     fi
 
-    echo "$output"
   fi
 
   # Check for SUCCESS in output
   [[ "$output" =~ SUCCESS ]] || { echo "$output" >&2; return 1; }
+  echo "$output"
 }
 
 run_stage_0() {
@@ -208,14 +262,32 @@ run_stage_0() {
 
 run_task() {
   SKIP_TASK=false  # Reset for each task
+
+  if $DRY_RUN; then
+    run_stage 1 "Research" opus || return 1
+    run_stage 2 "Design" opus || return 1
+    run_stage 3 "Structure" opus || return 1
+    run_stage 4 "Plan" opus || return 1
+    run_stage 5 "Implement" opus || return 1
+    run_stage 6 "Review & Commit" haiku || return 1
+    return 0
+  fi
+
   [[ -z "$TASK_ID" ]] && log "Selecting next task..."
-  run_stage 1 "Research & Planning" opus || return 1
+  local output
+  output=$(run_stage 1 "Research" opus) || return 1
 
   # Check if Stage 1 found a task (task_id=none means queue empty)
   if [[ -z "$TASK_ID" ]]; then
     log "No more tasks in queue"
     return 1
   fi
+
+  HANDOFF_FILE="$(handoff_path "$TASK_ID")"
+  export HANDOFF_FILE
+  ensure_handoff_dir || return 1
+  init_handoff_file "$HANDOFF_FILE" || return 1
+  append_handoff_block "$HANDOFF_FILE" "$output" || return 1
 
   log "Executing task: $TASK_ID"
 
@@ -225,10 +297,21 @@ run_task() {
     return 0
   fi
 
-  # TASK_ID now set by Stage 1
-  run_stage 2 "Implement" opus || return 1
+  output=$(run_stage 2 "Design" opus) || return 1
+  append_handoff_block "$HANDOFF_FILE" "$output" || return 1
+
+  output=$(run_stage 3 "Structure" opus) || return 1
+  append_handoff_block "$HANDOFF_FILE" "$output" || return 1
+
+  output=$(run_stage 4 "Plan" opus) || return 1
+  append_handoff_block "$HANDOFF_FILE" "$output" || return 1
+
+  output=$(run_stage 5 "Implement" opus) || return 1
+  append_handoff_block "$HANDOFF_FILE" "$output" || return 1
+
   if ! git diff --quiet || ! git diff --cached --quiet; then
-    run_stage 3 "Commit & Review" haiku || return 1
+    output=$(run_stage 6 "Review & Commit" haiku) || return 1
+    append_handoff_block_optional "$HANDOFF_FILE" "$output" || return 1
   else
     log "No changes to commit"
   fi

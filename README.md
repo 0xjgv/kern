@@ -1,6 +1,6 @@
 # kern
 
-Autonomous development pipeline — 4-stage task execution with context isolation.
+Autonomous development pipeline — 7-stage task execution with context isolation.
 
 ## Installation
 
@@ -22,23 +22,23 @@ kern --update
 ## Architecture
 
 ```
-┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  STAGE 0         │     │  STAGE 1         │     │  STAGE 2         │     │  STAGE 3         │
-│  Populate Queue  │ ──▶ │  Research & Plan │ ──▶ │  Implement       │ ──▶ │  Review & Commit │
-│  (haiku)         │     │  (opus)          │     │  (opus)          │     │  (haiku)         │
-│                  │     │                  │     │                  │     │                  │
-│  - Parse SPEC.md │     │  - Select task   │     │  - Follow plan   │     │  - Review diff   │
-│  - Create tasks  │     │  - Research code │     │  - Make changes  │     │  - Create commit │
-│  - Idempotent    │     │  - Store plan    │     │  - Validate      │     │  - Mark complete │
-└──────────────────┘     └──────────────────┘     └──────────────────┘     └──────────────────┘
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│  STAGE 0         │ │  STAGE 1         │ │  STAGE 2         │ │  STAGE 3         │ │  STAGE 4         │ │  STAGE 5         │ │  STAGE 6         │
+│  Populate Queue  │ │  Research        │ │  Design          │ │  Structure       │ │  Plan            │ │  Implement       │ │  Review & Commit │
+│  (haiku)         │ │  (opus)          │ │  (opus)          │ │  (opus)          │ │  (opus)          │ │  (opus)          │ │  (haiku)         │
+│                  │ │                  │ │                  │ │                  │ │                  │ │                  │ │                  │
+│  - Parse SPEC.md │ │  - Select task   │ │  - Design choices│ │  - File layout   │ │  - Steps + crit  │ │  - Make changes  │ │  - Review diff   │
+│  - Create tasks  │ │  - Research code │ │  - Patterns      │ │  - Touch list    │ │  - Store plan    │ │  - Validate      │ │  - Create commit │
+│  - Idempotent    │ │  - Store findings│ │  - Store design  │ │  - Store structure│ │                  │ │                  │ │  - Mark complete │
+└──────────────────┘ └──────────────────┘ └──────────────────┘ └──────────────────┘ └──────────────────┘ └──────────────────┘ └──────────────────┘
 ```
 
 ## Why Stages?
 
 1. **Context isolation**: Each stage starts fresh, avoiding 100K+ token sessions
 2. **Model selection**: Cheap models (haiku) for simple work, powerful models (opus) for complex work
-3. **Read-only exploration**: Stage 1 researches without modifying files
-4. **Restricted commit**: Stage 3 only reviews and commits
+3. **Read-only exploration**: Stages 1-4 research/design/structure/plan without modifying files
+4. **Restricted commit**: Stage 6 only reviews and commits
 5. **Task queue**: Stage 0 syncs SPEC.md → TaskList for structured tracking
 
 ## Project Setup
@@ -89,19 +89,28 @@ kern-$PROJECT_ID-$BRANCH
 
 Prevents collisions between repos and git worktrees.
 
+### Runtime State
+
+All generated runtime state is written inside the current working directory:
+`.kern/`
+
+Handoff files are append-only per task:
+`.kern/handoff/task-<id>.md`
+
 ## Context Injection
 
 Each stage receives context via template placeholders:
 
-| Context | Stage 0 | Stage 1 | Stage 2 | Stage 3 |
-|---------|---------|---------|---------|---------|
-| SPEC_FILE | ✓ | - | - | - |
-| TASK_ID | - | ✓ | ✓ | ✓ |
-| HINT | - | ✓ | ✓ | - |
-| RECENT_COMMITS | - | ✓ | ✓ | ✓ |
-| DIFF | - | - | - | ✓ |
+| Context | Stage 0 | Stage 1 | Stage 2 | Stage 3 | Stage 4 | Stage 5 | Stage 6 |
+|---------|---------|---------|---------|---------|---------|---------|---------|
+| SPEC_FILE | ✓ | - | - | - | - | - | - |
+| TASK_ID | - | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| HINT | - | ✓ | - | - | - | - | - |
+| RECENT_COMMITS | - | ✓ | - | - | - | - | ✓ |
+| DIFF | - | - | - | - | - | - | ✓ |
+| HANDOFF_FILE | - | - | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-Task metadata (research findings, plan) is accessed via `TaskGet`.
+Task metadata (research/design/structure/plan) is accessed via `TaskGet`.
 
 ## Tool Restrictions
 
@@ -111,11 +120,14 @@ Tool restrictions are enforced via `--allowedTools` flag in kern.sh:
 |-------|------|--------------|
 | 0: Populate | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskCreate, TaskUpdate |
 | 1: Research | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Task |
-| 2: Implement | Full access | All tools (--dangerously-skip-permissions) |
-| 3: Commit | Commit-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Bash |
+| 2: Design | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Task |
+| 3: Structure | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Task |
+| 4: Plan | Read-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Task |
+| 5: Implement | Full access | All tools (--dangerously-skip-permissions) |
+| 6: Commit | Commit-only | Read, Glob, Grep, LS, TaskGet, TaskList, TaskUpdate, Bash |
 
-**Note**: Stages 0, 1, 3 use `cld_s0()`, `cld_s1()`, `cld_s3()` respectively, pre-approving tools via CLI flag.
-Stage 2 uses `cld_rw()` with full permissions for file edits and bash commands.
+**Note**: Stages 0, 1-4, 6 use `cld_s0()`, `cld_s1()`, `cld_s3()` respectively, pre-approving tools via CLI flag.
+Stage 5 uses `cld_rw()` with full permissions for file edits and bash commands.
 
 ## Task State
 
@@ -131,8 +143,11 @@ Tasks are tracked in two places:
 **TaskList** — Claude's task queue with metadata:
 - `metadata.spec_line`: Line number in SPEC.md
 - `metadata.research`: Files, patterns, constraints from Stage 1
-- `metadata.plan`: Implementation steps from Stage 1
-- `metadata.implementation`: Changed files, validation from Stage 2
+- `metadata.design`: Design decisions from Stage 2
+- `metadata.structure`: File layout decisions from Stage 3
+- `metadata.plan`: Implementation steps from Stage 4
+- `metadata.success_criteria`: Verification criteria from Stage 4
+- `metadata.implementation`: Changed files, validation from Stage 5
 
 ## Output Codes
 

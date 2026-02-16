@@ -1,6 +1,6 @@
 # kern
 
-Autonomous 4-stage development pipeline using Claude CLI for task execution with context isolation.
+Autonomous 7-stage development pipeline using Claude CLI for task execution with context isolation.
 
 ## Stack
 
@@ -11,9 +11,10 @@ Autonomous 4-stage development pipeline using Claude CLI for task execution with
 
 - `kern.sh` — Pipeline orchestrator
 - `install.sh` — Installation script
-- `prompts/` — Stage templates (0_populate_queue → 3_review_commit)
+- `prompts/` — Stage templates (0_populate_queue → 6_review_commit)
 - `agents.json` — Claude CLI agent definitions
 - `SPEC.md` — Task list with checkbox state (`[ ]`, `[~]`, `[x]`)
+- `.kern/` — Runtime state in current working directory (`.kern/handoff/task-<id>.md`)
 
 ## Commands
 
